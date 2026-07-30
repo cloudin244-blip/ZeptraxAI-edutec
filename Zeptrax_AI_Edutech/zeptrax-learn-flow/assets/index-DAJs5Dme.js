@@ -24975,7 +24975,7 @@ function Roe() {
 }
 const Ioe = [{
     icon: cl,
-    title: "12-month curriculum",
+    title: "4-month curriculum",
     desc: "Project-based, instructor-led, outcome-focused."
 }, {
     icon: Ro,
@@ -58656,7 +58656,7 @@ function OOe() {
                         children: [{
                             icon: cl,
                             label: "Duration",
-                            value: "12 months"
+                            value: "4 months"
                         }, {
                             icon: yh,
                             label: "Modules",
@@ -75608,7 +75608,7 @@ function d2e() {
             description: "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
             category: "Masters Program",
             level: "advanced",
-            duration: "12 months",
+            duration: "4 months",
             enrolled: 0,
             isProgram: !0,
             slug: x.slug
