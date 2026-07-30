@@ -25559,7 +25559,7 @@ function Voe() {
     })
 }
 
-function Xoe() {
+function XoeCertifications() {
     return m.jsx("section", {
         id: "certifications",
         className: "py-16 bg-secondary/30",
@@ -25985,7 +25985,7 @@ function ir() {
 function Koe() {
     return m.jsxs("div", {
         className: "min-h-screen bg-background",
-        children: [m.jsx(Kn, {}), m.jsx(Roe, {}), m.jsx(Moe, {}), m.jsx(zoe, {}), m.jsx(Voe, {}), m.jsx(Xoe, {}), m.jsx(Hoe, {}), m.jsx(ir, {})]
+        children: [m.jsx(Kn, {}), m.jsx(Roe, {}), m.jsx(Moe, {}), m.jsx(zoe, {}), m.jsx(Voe, {}), m.jsx(XoeCertifications, {}), m.jsx(Hoe, {}), m.jsx(ir, {})]
     })
 }
 
