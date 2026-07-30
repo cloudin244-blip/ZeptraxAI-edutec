@@ -5,7 +5,9 @@ import posixpath
 import os
 import json
 
-ROOT = Path(__file__).resolve().parent / "zeptrax-learn-flow.base44.app"
+ROOT = Path(__file__).resolve().parent / "zeptrax-learn-flow"
+if not ROOT.exists():
+    ROOT = Path(__file__).resolve().parent / "zeptrax-learn-flow.base44.app"
 
 
 class AppHandler(SimpleHTTPRequestHandler):

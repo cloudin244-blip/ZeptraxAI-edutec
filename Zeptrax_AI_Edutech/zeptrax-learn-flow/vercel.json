@@ -1,0 +1,25 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/api/apps/public/prod/public-settings/by-id/:id",
+      "destination": "/api/apps/public/prod/public-settings/by-id/:id.html"
+    },
+    {
+      "source": "/api/apps/:appId/entities/:entity/me",
+      "destination": "/api/apps/:appId/entities/:entity/me.html"
+    },
+    {
+      "source": "/api/apps/:appId/analytics/track/batch",
+      "destination": "/api/apps/:appId/analytics/track/batch.html"
+    },
+    {
+      "source": "/api/app-logs/:appId/log-user-in-app/home",
+      "destination": "/api/app-logs/:appId/log-user-in-app/home.html"
+    },
+    {
+      "source": "/((?!assets|static|manifest.json|favicon.ico|api).*)*",
+      "destination": "/index.html"
+    }
+  ]
+}
