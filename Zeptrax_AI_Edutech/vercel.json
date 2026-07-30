@@ -18,7 +18,11 @@
       "destination": "/api/app-logs/:appId/log-user-in-app/home.html"
     },
     {
-      "source": "/((?!api|assets|static|favicon.ico|manifest.json).*)",
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    },
+    {
+      "source": "/:path*",
       "destination": "/index.html"
     }
   ]
