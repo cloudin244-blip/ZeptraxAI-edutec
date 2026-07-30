@@ -25074,11 +25074,11 @@ const Loe = "mydata193@gmail.com",
         label: "Certificate Verification"
     }],
     Ph = [{
-        title: "Masters program in Artificial intelligence",
-        slug: "masters-program-in-artificial-intelligence"
-    }, {
         title: "Masters in Generative AI with machine learning",
         slug: "masters-in-generative-ai-machine-learning"
+    }, {
+        title: "Masters program in Artificial intelligence",
+        slug: "masters-program-in-artificial-intelligence"
     }, {
         title: "Masters in AI with Project Management",
         slug: "masters-in-ai-project-management"
@@ -25181,7 +25181,7 @@ const Loe = "mydata193@gmail.com",
         slugs: ["masters-in-ai-aws-data-engineer", "masters-in-ai-gcp-data-engineer", "masters-in-ai-azure-fabric", "masters-in-ai-oracle-data-engineer", "masters-in-ai-databricks", "masters-in-cortex-ai-snowflake", "masters-in-ai-snowflake-data-engineer"]
     }, {
         title: "Data Science & BI",
-        slugs: ["masters-program-in-artificial-intelligence", "masters-in-generative-ai-machine-learning", "masters-in-ai-data-scientist", "masters-in-ai-business-intelligence", "masters-in-ai-business-analyst"]
+        slugs: ["masters-in-generative-ai-machine-learning", "masters-program-in-artificial-intelligence", "masters-in-ai-data-scientist", "masters-in-ai-business-intelligence", "masters-in-ai-business-analyst"]
     }, {
         title: "Cybersecurity",
         slugs: ["masters-in-ai-cybersecurity-blue-team", "masters-in-ai-cybersecurity-red-team", "masters-in-ai-cloud-security"]
