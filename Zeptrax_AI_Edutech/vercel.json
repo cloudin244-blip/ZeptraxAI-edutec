@@ -19,7 +19,7 @@
     },
     {
       "source": "/api/:path*",
-      "destination": "/api/index.py"
+      "destination": "https://zeptrax-ai-edutech.onrender.com/api/:path*"
     },
     {
       "source": "/:path+",
