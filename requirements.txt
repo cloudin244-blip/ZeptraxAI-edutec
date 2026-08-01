@@ -1,1 +1,2 @@
-# No external python dependencies required. The server runs on standard library packages.
+# External python dependencies
+pymongo[srv]

@@ -7,6 +7,14 @@ import posixpath
 import os
 import json
 
+try:
+    from db_router import handle_db_request
+except ImportError:
+    try:
+        from Zeptrax_AI_Edutech.db_router import handle_db_request
+    except ImportError:
+        handle_db_request = None
+
 ROOT = Path(__file__).resolve().parent / "zeptrax-learn-flow"
 if not ROOT.exists():
     ROOT = Path(__file__).resolve().parent / "zeptrax-learn-flow.base44.app"
@@ -124,6 +132,19 @@ class AppHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def do_GET(self):
+        parsed = urlparse(self.path)
+        query_params = urllib.parse.parse_qs(parsed.query)
+        if handle_db_request:
+            db_response = handle_db_request("GET", parsed.path, query_params, None, self.headers)
+            if db_response is not None:
+                self.send_response(db_response["status"])
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                self.end_headers()
+                self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
+                return
         self._serve_file()
 
     def do_HEAD(self):
@@ -132,12 +153,13 @@ class AppHandler(SimpleHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
 
     def do_POST(self):
-        parsed_path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        parsed_path = parsed.path
         if parsed_path.endswith("/integration-endpoints/Core/InvokeLLM"):
             try:
                 content_length = int(self.headers.get('Content-Length', 0))
@@ -165,7 +187,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
                 self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
                 self.end_headers()
                 self.wfile.write(json.dumps(response_data).encode('utf-8'))
@@ -178,12 +200,88 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
                 return
 
+        # Handle dynamic DB POST requests
+        content_length = int(self.headers.get('Content-Length', 0))
+        body_data = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else ""
+        query_params = urllib.parse.parse_qs(parsed.query)
+        if handle_db_request:
+            db_response = handle_db_request("POST", parsed.path, query_params, body_data, self.headers)
+            if db_response is not None:
+                self.send_response(db_response["status"])
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                self.end_headers()
+                self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
+                return
+
         # Default fallback for other posts
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
         self.wfile.write(b'{"ok": true}')
+
+    def do_PUT(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        body_data = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else ""
+        parsed = urlparse(self.path)
+        query_params = urllib.parse.parse_qs(parsed.query)
+        if handle_db_request:
+            db_response = handle_db_request("PUT", parsed.path, query_params, body_data, self.headers)
+            if db_response is not None:
+                self.send_response(db_response["status"])
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                self.end_headers()
+                self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
+                return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_DELETE(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        body_data = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else ""
+        parsed = urlparse(self.path)
+        query_params = urllib.parse.parse_qs(parsed.query)
+        if handle_db_request:
+            db_response = handle_db_request("DELETE", parsed.path, query_params, body_data, self.headers)
+            if db_response is not None:
+                self.send_response(db_response["status"])
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                self.end_headers()
+                self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
+                return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_PATCH(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        body_data = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else ""
+        parsed = urlparse(self.path)
+        query_params = urllib.parse.parse_qs(parsed.query)
+        if handle_db_request:
+            db_response = handle_db_request("PATCH", parsed.path, query_params, body_data, self.headers)
+            if db_response is not None:
+                self.send_response(db_response["status"])
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                self.end_headers()
+                self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
+                return
+        self.send_response(404)
+        self.end_headers()
+
 
     def _serve_file(self, head_only=False):
         parsed_path = urlparse(self.path).path
