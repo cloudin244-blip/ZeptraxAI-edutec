@@ -19,7 +19,7 @@
     },
     {
       "source": "/api/:path*",
-      "destination": "/api/:path*"
+      "destination": "/api/index.py"
     },
     {
       "source": "/:path+",
