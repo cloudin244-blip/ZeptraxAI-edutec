@@ -21,7 +21,16 @@ def load_dotenv():
             except Exception as e:
                 print(f"Error loading .env file from {env_file}: {e}")
 
+def clean_api_key(key):
+    if not key:
+        return key
+    first_line = key.split('\n')[0].split('\r')[0].strip()
+    first_word = first_line.split(' ')[0].strip()
+    return first_word.strip('"').strip("'")
+
+
 def call_gemini(prompt, schema=None, api_key=None):
+    api_key = clean_api_key(api_key)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     payload = {
         "contents": [{
@@ -60,7 +69,9 @@ def call_gemini(prompt, schema=None, api_key=None):
         print(f"Error calling Gemini API: {e}")
         raise
 
+
 def call_openai(prompt, schema=None, api_key=None):
+    api_key = clean_api_key(api_key)
     url = "https://api.openai.com/v1/chat/completions"
     payload = {
         "model": "gpt-4o-mini",
