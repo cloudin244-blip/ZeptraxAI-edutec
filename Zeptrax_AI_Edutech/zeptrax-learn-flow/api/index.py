@@ -163,11 +163,13 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps(response_data).encode('utf-8'))
                 return
             except Exception as e:
-                self.send_response(500)
+                self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
                 self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({"response": f"Server Error: {str(e)}"}).encode('utf-8'))
                 return
 
         # Default fallback for other posts
