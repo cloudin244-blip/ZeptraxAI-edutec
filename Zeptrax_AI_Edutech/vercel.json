@@ -3,15 +3,51 @@
   "rewrites": [
     {
       "source": "/api/apps/public/prod/public-settings/by-id/:id",
-      "destination": "/api/apps/public/prod/public-settings/by-id/:id.html"
+      "destination": "/zeptrax-learn-flow/api/apps/public/prod/public-settings/by-id/:id.html"
     },
     {
       "source": "/api/:path*",
       "destination": "/api/index.py"
     },
     {
-      "source": "/:path+",
-      "destination": "/index.html"
+      "source": "/assets/:path*",
+      "destination": "/zeptrax-learn-flow/assets/:path*"
+    },
+    {
+      "source": "/static/:path*",
+      "destination": "/zeptrax-learn-flow/static/:path*"
+    },
+    {
+      "source": "/manifest.json",
+      "destination": "/zeptrax-learn-flow/manifest.json"
+    },
+    {
+      "source": "/favicon.ico",
+      "destination": "/zeptrax-learn-flow/favicon.ico"
+    },
+    {
+      "source": "/media/:path*",
+      "destination": "/media/:path*"
+    },
+    {
+      "source": "/cdn.pixabay.com/:path*",
+      "destination": "/cdn.pixabay.com/:path*"
+    },
+    {
+      "source": "/fonts.googleapis.com/:path*",
+      "destination": "/fonts.googleapis.com/:path*"
+    },
+    {
+      "source": "/fonts.gstatic.com/:path*",
+      "destination": "/fonts.gstatic.com/:path*"
+    },
+    {
+      "source": "/_DataURI/:path*",
+      "destination": "/_DataURI/:path*"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/zeptrax-learn-flow/index.html"
     }
   ]
 }
