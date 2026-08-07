@@ -3,15 +3,51 @@
   "rewrites": [
     {
       "source": "/api/apps/public/prod/public-settings/by-id/:id",
-      "destination": "/api/apps/public/prod/public-settings/by-id/:id.html"
+      "destination": "/Zeptrax_AI_Edutech/zeptrax-learn-flow/api/apps/public/prod/public-settings/by-id/:id.html"
     },
     {
       "source": "/api/:path*",
       "destination": "/api/index.py"
     },
     {
-      "source": "/:path+",
-      "destination": "/index.html"
+      "source": "/assets/:path*",
+      "destination": "/Zeptrax_AI_Edutech/zeptrax-learn-flow/assets/:path*"
+    },
+    {
+      "source": "/static/:path*",
+      "destination": "/Zeptrax_AI_Edutech/zeptrax-learn-flow/static/:path*"
+    },
+    {
+      "source": "/manifest.json",
+      "destination": "/Zeptrax_AI_Edutech/zeptrax-learn-flow/manifest.json"
+    },
+    {
+      "source": "/favicon.ico",
+      "destination": "/Zeptrax_AI_Edutech/zeptrax-learn-flow/favicon.ico"
+    },
+    {
+      "source": "/media/:path*",
+      "destination": "/Zeptrax_AI_Edutech/media/:path*"
+    },
+    {
+      "source": "/cdn.pixabay.com/:path*",
+      "destination": "/Zeptrax_AI_Edutech/cdn.pixabay.com/:path*"
+    },
+    {
+      "source": "/fonts.googleapis.com/:path*",
+      "destination": "/Zeptrax_AI_Edutech/fonts.googleapis.com/:path*"
+    },
+    {
+      "source": "/fonts.gstatic.com/:path*",
+      "destination": "/Zeptrax_AI_Edutech/fonts.gstatic.com/:path*"
+    },
+    {
+      "source": "/_DataURI/:path*",
+      "destination": "/Zeptrax_AI_Edutech/_DataURI/:path*"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/Zeptrax_AI_Edutech/zeptrax-learn-flow/index.html"
     }
   ]
 }
