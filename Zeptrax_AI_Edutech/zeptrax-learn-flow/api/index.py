@@ -120,11 +120,6 @@ def call_openai(prompt, schema=None, api_key=None):
         raise
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent / "Zeptrax_AI_Edutech" / "zeptrax-learn-flow"
-if not ROOT.exists():
-    ROOT = HERE.parent / "zeptrax-learn-flow"
-if not ROOT.exists():
-    ROOT = HERE
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -143,25 +138,32 @@ class handler(BaseHTTPRequestHandler):
                 return
         
         # File fallback: Try to serve static mock files from disk
-        # Match both /api/ and /static-api/ requests to the static files
         path_str = parsed.path.lstrip("/")
-        # If it matches `/api/...`, check both `api/...` and `static-api/...`
-        prefixes = ["", "Zeptrax_AI_Edutech/zeptrax-learn-flow/"]
+        
+        # Build list of potential roots where the frontend build files are stored
+        search_roots = [
+            HERE.parent,
+            HERE.parent / "Zeptrax_AI_Edutech",
+            HERE.parent / "Zeptrax_AI_Edutech" / "zeptrax-learn-flow",
+            HERE.parent / "zeptrax-learn-flow",
+            HERE
+        ]
+        
         candidates = []
-        for prefix in prefixes:
-            candidates.append(ROOT.parent / prefix / path_str)
-            candidates.append(ROOT.parent / prefix / f"{path_str}.html")
-            candidates.append(ROOT.parent / prefix / f"{path_str}.json")
-            # Replace api/ with static-api/ or vice versa to check alternate locations
+        for root in search_roots:
+            candidates.append(root / path_str)
+            candidates.append(root / f"{path_str}.html")
+            candidates.append(root / f"{path_str}.json")
             if "api/" in path_str:
-                alt_path = path_str.replace("api/", "static-api/")
-                candidates.append(ROOT.parent / prefix / alt_path)
-                candidates.append(ROOT.parent / prefix / f"{alt_path}.html")
-                candidates.append(ROOT.parent / prefix / f"{alt_path}.json")
-                alt_path_2 = path_str.replace("api/", "")
-                candidates.append(ROOT.parent / prefix / alt_path_2)
-                candidates.append(ROOT.parent / prefix / f"{alt_path_2}.html")
-                candidates.append(ROOT.parent / prefix / f"{alt_path_2}.json")
+                alt = path_str.replace("api/", "static-api/")
+                candidates.append(root / alt)
+                candidates.append(root / f"{alt}.html")
+                candidates.append(root / f"{alt}.json")
+                
+                alt2 = path_str.replace("api/", "")
+                candidates.append(root / alt2)
+                candidates.append(root / f"{alt2}.html")
+                candidates.append(root / f"{alt2}.json")
 
         for candidate in candidates:
             if candidate.exists() and candidate.is_file():
@@ -256,21 +258,31 @@ class handler(BaseHTTPRequestHandler):
 
         # File fallback for POST: Try to serve static mock files from disk
         path_str = parsed.path.lstrip("/")
-        prefixes = ["", "Zeptrax_AI_Edutech/zeptrax-learn-flow/"]
+        
+        # Build list of potential roots where the frontend build files are stored
+        search_roots = [
+            HERE.parent,
+            HERE.parent / "Zeptrax_AI_Edutech",
+            HERE.parent / "Zeptrax_AI_Edutech" / "zeptrax-learn-flow",
+            HERE.parent / "zeptrax-learn-flow",
+            HERE
+        ]
+        
         candidates = []
-        for prefix in prefixes:
-            candidates.append(ROOT.parent / prefix / path_str)
-            candidates.append(ROOT.parent / prefix / f"{path_str}.html")
-            candidates.append(ROOT.parent / prefix / f"{path_str}.json")
+        for root in search_roots:
+            candidates.append(root / path_str)
+            candidates.append(root / f"{path_str}.html")
+            candidates.append(root / f"{path_str}.json")
             if "api/" in path_str:
-                alt_path = path_str.replace("api/", "static-api/")
-                candidates.append(ROOT.parent / prefix / alt_path)
-                candidates.append(ROOT.parent / prefix / f"{alt_path}.html")
-                candidates.append(ROOT.parent / prefix / f"{alt_path}.json")
-                alt_path_2 = path_str.replace("api/", "")
-                candidates.append(ROOT.parent / prefix / alt_path_2)
-                candidates.append(ROOT.parent / prefix / f"{alt_path_2}.html")
-                candidates.append(ROOT.parent / prefix / f"{alt_path_2}.json")
+                alt = path_str.replace("api/", "static-api/")
+                candidates.append(root / alt)
+                candidates.append(root / f"{alt}.html")
+                candidates.append(root / f"{alt}.json")
+                
+                alt2 = path_str.replace("api/", "")
+                candidates.append(root / alt2)
+                candidates.append(root / f"{alt2}.html")
+                candidates.append(root / f"{alt2}.json")
 
         for candidate in candidates:
             if candidate.exists() and candidate.is_file():
