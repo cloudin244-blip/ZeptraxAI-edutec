@@ -5,6 +5,9 @@ import urllib.error
 from pathlib import Path
 import os
 import json
+import re
+import uuid
+import time
 
 try:
     from Zeptrax_AI_Edutech.db_router import handle_db_request
@@ -125,6 +128,52 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         query_params = urllib.parse.parse_qs(parsed.query)
+        
+        # Intercept Social Logins (Google, GitHub, Facebook, LinkedIn)
+        social_match = re.match(r"^/api/apps/auth(?:/([^/]+))?/login$", parsed.path)
+        if social_match:
+            from_url_list = query_params.get("from_url", [])
+            from_url = from_url_list[0] if from_url_list else "/"
+            
+            # Generate or fetch a mock/registered token
+            mock_token = "4756938a25abc81883c3619b5cc8abcd"
+            
+            # If MongoDB is connected, let's find or create a mock user for this provider
+            if handle_db_request:
+                try:
+                    from db_router import db as database
+                    if database is not None:
+                        provider = social_match.group(1) or "google"
+                        email = f"social_{provider}@zeptrax.in"
+                        user = database["User"].find_one({"email": email})
+                        if user:
+                            mock_token = user.get("token", mock_token)
+                        else:
+                            mock_token = uuid.uuid4().hex
+                            new_user = {
+                                "id": str(uuid.uuid4()),
+                                "email": email,
+                                "name": f"{provider.capitalize()} User",
+                                "role": "user",
+                                "token": mock_token,
+                                "created_at": time.time(),
+                                "app_id": query_params.get("app_id", ["6a58811b763e4b993e2b1bed"])[0]
+                            }
+                            database["User"].insert_one(new_user)
+                except Exception as db_err:
+                    print(f"Error in social login database check: {db_err}")
+            
+            # Parse from_url and append access_token
+            parsed_from = urlparse(from_url)
+            sep = "&" if parsed_from.query else "?"
+            redirect_url = f"{from_url}{sep}access_token={mock_token}"
+            
+            self.send_response(302)
+            self.send_header("Location", redirect_url)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            return
+
         if handle_db_request:
             db_response = handle_db_request("GET", parsed.path, query_params, None, self.headers)
             if db_response is not None:
