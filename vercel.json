@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/apps/public/prod/public-settings/by-id/:id",
-      "destination": "/Zeptrax_AI_Edutech/zeptrax-learn-flow/static-api/apps/public/prod/public-settings/by-id/:id.html"
+      "destination": "/Zeptrax_AI_Edutech/zeptrax-learn-flow/static-api/apps/public/prod/public-settings/by-id/:id"
     },
     {
       "source": "/api/((?!index$).*)",
