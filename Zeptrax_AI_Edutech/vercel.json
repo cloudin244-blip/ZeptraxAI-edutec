@@ -1,5 +1,10 @@
 {
   "cleanUrls": true,
+  "functions": {
+    "api/**/*.py": {
+      "runtime": "@vercel/python"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/apps/public/prod/public-settings/by-id/:id",
@@ -7,7 +12,7 @@
     },
     {
       "source": "/api/:path*",
-      "destination": "/api/index.py"
+      "destination": "/api/index"
     },
     {
       "source": "/assets/:path*",
