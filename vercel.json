@@ -46,7 +46,7 @@
       "destination": "/Zeptrax_AI_Edutech/_DataURI/:path*"
     },
     {
-      "source": "/:path*",
+      "source": "/((?!api/|static-api/).*)",
       "destination": "/Zeptrax_AI_Edutech/zeptrax-learn-flow/index.html"
     }
   ]

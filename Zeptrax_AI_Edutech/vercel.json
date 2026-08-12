@@ -46,7 +46,7 @@
       "destination": "/_DataURI/:path*"
     },
     {
-      "source": "/:path*",
+      "source": "/((?!api/|static-api/).*)",
       "destination": "/zeptrax-learn-flow/index.html"
     }
   ]
