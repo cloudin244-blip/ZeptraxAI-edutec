@@ -6,8 +6,8 @@
       "destination": "/Zeptrax_AI_Edutech/zeptrax-learn-flow/static-api/apps/public/prod/public-settings/by-id/:id"
     },
     {
-      "source": "/api/((?!index$).*)",
-      "destination": "/api/index"
+      "source": "/api/:path+",
+      "destination": "/api"
     },
     {
       "source": "/assets/:path*",
