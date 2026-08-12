@@ -31,7 +31,7 @@ def clean_api_key(key):
 
 def call_gemini(prompt, schema=None, api_key=None):
     api_key = clean_api_key(api_key)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
     payload = {
         "contents": [{
             "parts": [{
