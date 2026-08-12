@@ -235,7 +235,11 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
-        self.wfile.write(b'{"status": "AI backend handler is active"}')
+        self.wfile.write(json.dumps({
+            "status": "AI backend handler is active",
+            "path": self.path,
+            "headers": dict(self.headers)
+        }).encode('utf-8'))
 
     def do_OPTIONS(self):
         self.send_response(204)
