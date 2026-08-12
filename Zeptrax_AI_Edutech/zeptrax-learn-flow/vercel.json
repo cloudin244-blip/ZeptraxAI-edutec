@@ -8,7 +8,7 @@
   "rewrites": [
     {
       "source": "/api/apps/public/prod/public-settings/by-id/:id",
-      "destination": "/api/apps/public/prod/public-settings/by-id/:id.html"
+      "destination": "/static-api/apps/public/prod/public-settings/by-id/:id.html"
     },
     {
       "source": "/api/:path*",

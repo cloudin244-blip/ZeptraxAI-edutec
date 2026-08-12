@@ -119,6 +119,13 @@ def call_openai(prompt, schema=None, api_key=None):
         print(f"Error calling OpenAI API: {e}")
         raise
 
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent / "Zeptrax_AI_Edutech" / "zeptrax-learn-flow"
+if not ROOT.exists():
+    ROOT = HERE.parent / "zeptrax-learn-flow"
+if not ROOT.exists():
+    ROOT = HERE
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -134,6 +141,43 @@ class handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
                 return
+        
+        # File fallback: Try to serve static mock files from disk
+        # Match both /api/ and /static-api/ requests to the static files
+        path_str = parsed.path.lstrip("/")
+        # If it matches `/api/...`, check both `api/...` and `static-api/...`
+        prefixes = ["", "Zeptrax_AI_Edutech/zeptrax-learn-flow/"]
+        candidates = []
+        for prefix in prefixes:
+            candidates.append(ROOT.parent / prefix / path_str)
+            candidates.append(ROOT.parent / prefix / f"{path_str}.html")
+            candidates.append(ROOT.parent / prefix / f"{path_str}.json")
+            # Replace api/ with static-api/ or vice versa to check alternate locations
+            if "api/" in path_str:
+                alt_path = path_str.replace("api/", "static-api/")
+                candidates.append(ROOT.parent / prefix / alt_path)
+                candidates.append(ROOT.parent / prefix / f"{alt_path}.html")
+                candidates.append(ROOT.parent / prefix / f"{alt_path}.json")
+                alt_path_2 = path_str.replace("api/", "")
+                candidates.append(ROOT.parent / prefix / alt_path_2)
+                candidates.append(ROOT.parent / prefix / f"{alt_path_2}.html")
+                candidates.append(ROOT.parent / prefix / f"{alt_path_2}.json")
+
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file():
+                self.send_response(200)
+                if candidate.suffix == ".json":
+                    self.send_header("Content-Type", "application/json")
+                else:
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                self.end_headers()
+                with candidate.open("rb") as f:
+                    self.wfile.write(f.read())
+                return
+
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -208,6 +252,39 @@ class handler(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
                 self.end_headers()
                 self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
+                return
+
+        # File fallback for POST: Try to serve static mock files from disk
+        path_str = parsed.path.lstrip("/")
+        prefixes = ["", "Zeptrax_AI_Edutech/zeptrax-learn-flow/"]
+        candidates = []
+        for prefix in prefixes:
+            candidates.append(ROOT.parent / prefix / path_str)
+            candidates.append(ROOT.parent / prefix / f"{path_str}.html")
+            candidates.append(ROOT.parent / prefix / f"{path_str}.json")
+            if "api/" in path_str:
+                alt_path = path_str.replace("api/", "static-api/")
+                candidates.append(ROOT.parent / prefix / alt_path)
+                candidates.append(ROOT.parent / prefix / f"{alt_path}.html")
+                candidates.append(ROOT.parent / prefix / f"{alt_path}.json")
+                alt_path_2 = path_str.replace("api/", "")
+                candidates.append(ROOT.parent / prefix / alt_path_2)
+                candidates.append(ROOT.parent / prefix / f"{alt_path_2}.html")
+                candidates.append(ROOT.parent / prefix / f"{alt_path_2}.json")
+
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file():
+                self.send_response(200)
+                if candidate.suffix == ".json":
+                    self.send_header("Content-Type", "application/json")
+                else:
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                self.end_headers()
+                with candidate.open("rb") as f:
+                    self.wfile.write(f.read())
                 return
 
         # Default fallback for other posts
