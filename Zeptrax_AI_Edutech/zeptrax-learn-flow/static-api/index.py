@@ -30,7 +30,7 @@ def clean_api_key(key):
 
 
 # Tried in order; later models are used when earlier ones are overloaded
-GEMINI_MODELS = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
+GEMINI_MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]
 
 
 def call_gemini(prompt, schema=None, api_key=None):
@@ -62,7 +62,7 @@ def call_gemini(prompt, schema=None, api_key=None):
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 res_json = json.loads(response.read().decode("utf-8"))
             text_response = res_json["candidates"][0]["content"]["parts"][0]["text"]
             try:
