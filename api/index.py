@@ -10,6 +10,9 @@ import re
 import uuid
 import time
 
+# On Vercel the project root is not on the import path; db_router is bundled via includeFiles
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 DB_ROUTER_ERROR = None
 try:
     from Zeptrax_AI_Edutech.db_router import handle_db_request
