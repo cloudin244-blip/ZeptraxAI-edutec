@@ -5,6 +5,7 @@ import urllib.error
 from pathlib import Path
 import os
 import json
+import time
 
 def load_dotenv():
     # Try to find .env file in the root or parent directories
@@ -39,28 +40,40 @@ def call_gemini(prompt, schema=None, api_key=None):
             }]
         }]
     }
+    # Minimal thinking keeps chat replies fast (~3s instead of 10-20s)
+    payload["generationConfig"] = {
+        "thinkingConfig": {"thinkingLevel": "minimal"}
+    }
     if schema:
-        payload["generationConfig"] = {
-            "responseMimeType": "application/json",
-            "responseSchema": schema
-        }
-        
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
-    
+        payload["generationConfig"]["responseMimeType"] = "application/json"
+        payload["generationConfig"]["responseSchema"] = schema
+
+    data = json.dumps(payload).encode("utf-8")
+
     try:
-        with urllib.request.urlopen(req) as response:
-            res_data = response.read().decode("utf-8")
-            res_json = json.loads(res_data)
-            text_response = res_json["candidates"][0]["content"]["parts"][0]["text"]
+        # Retry once on transient overload/rate-limit errors
+        for attempt in range(2):
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
             try:
-                return json.loads(text_response)
-            except Exception:
-                return {"response": text_response}
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    res_data = response.read().decode("utf-8")
+                break
+            except urllib.error.HTTPError as e:
+                if attempt == 0 and e.code in (429, 500, 503):
+                    time.sleep(1)
+                    continue
+                raise
+        res_json = json.loads(res_data)
+        text_response = res_json["candidates"][0]["content"]["parts"][0]["text"]
+        try:
+            return json.loads(text_response)
+        except Exception:
+            return {"response": text_response}
     except urllib.error.HTTPError as e:
         error_info = e.read().decode('utf-8')
         print(f"Gemini API HTTP Error: {e.code} - {error_info}")
