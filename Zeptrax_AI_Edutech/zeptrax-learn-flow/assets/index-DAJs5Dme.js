@@ -59866,13 +59866,13 @@ function ZptStudentShowcase({
                         })
                     }),
                     y = await v.json().catch(() => ({}));
-                if (!v.ok) {
+                if (!v.ok || !Array.isArray(y.students)) {
                     if (v.status === 401) try {
                         sessionStorage.removeItem(t)
                     } catch {}
-                    throw new Error(y.error || "Could not load students. Please try again.")
+                    throw new Error(y.error || "The student showcase is not available yet. Please try again later.")
                 }
-                o(y.students || []);
+                o(y.students);
                 try {
                     sessionStorage.setItem(t, x)
                 } catch {}
