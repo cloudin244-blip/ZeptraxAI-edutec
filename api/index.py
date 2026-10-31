@@ -40,57 +40,56 @@ def clean_api_key(key):
     return first_word.strip('"').strip("'")
 
 
+# Tried in order; later models are used when earlier ones are overloaded
+GEMINI_MODELS = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
+
+
 def call_gemini(prompt, schema=None, api_key=None):
     api_key = clean_api_key(api_key)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
-    payload = {
-        "contents": [{
-            "parts": [{
-                "text": prompt
+    last_error = None
+    for model in GEMINI_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        payload = {
+            "contents": [{
+                "parts": [{
+                    "text": prompt
+                }]
             }]
-        }]
-    }
-    # Minimal thinking keeps chat replies fast (~3s instead of 10-20s)
-    payload["generationConfig"] = {
-        "thinkingConfig": {"thinkingLevel": "minimal"}
-    }
-    if schema:
-        payload["generationConfig"]["responseMimeType"] = "application/json"
-        payload["generationConfig"]["responseSchema"] = schema
+        }
+        # Minimal thinking keeps chat replies fast (~3s instead of 10-20s)
+        if model.startswith("gemini-2.5"):
+            payload["generationConfig"] = {"thinkingConfig": {"thinkingBudget": 0}}
+        else:
+            payload["generationConfig"] = {"thinkingConfig": {"thinkingLevel": "minimal"}}
+        if schema:
+            payload["generationConfig"]["responseMimeType"] = "application/json"
+            payload["generationConfig"]["responseSchema"] = schema
 
-    data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
 
-    try:
-        # Retry once on transient overload/rate-limit errors
-        for attempt in range(2):
-            req = urllib.request.Request(
-                url,
-                data=data,
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=30) as response:
-                    res_data = response.read().decode("utf-8")
-                break
-            except urllib.error.HTTPError as e:
-                if attempt == 0 and e.code in (429, 500, 503):
-                    time.sleep(1)
-                    continue
-                raise
-        res_json = json.loads(res_data)
-        text_response = res_json["candidates"][0]["content"]["parts"][0]["text"]
         try:
-            return json.loads(text_response)
-        except Exception:
-            return {"response": text_response}
-    except urllib.error.HTTPError as e:
-        error_info = e.read().decode('utf-8')
-        print(f"Gemini API HTTP Error: {e.code} - {error_info}")
-        raise Exception(f"Gemini API Error: {error_info}")
-    except Exception as e:
-        print(f"Error calling Gemini API: {e}")
-        raise
+            with urllib.request.urlopen(req, timeout=20) as response:
+                res_json = json.loads(response.read().decode("utf-8"))
+            text_response = res_json["candidates"][0]["content"]["parts"][0]["text"]
+            try:
+                return json.loads(text_response)
+            except Exception:
+                return {"response": text_response}
+        except urllib.error.HTTPError as e:
+            error_info = e.read().decode('utf-8')
+            print(f"Gemini API HTTP Error ({model}): {e.code} - {error_info}")
+            if e.code not in (429, 500, 503, 504):
+                raise Exception(f"Gemini API Error: {error_info}")
+            last_error = e
+        except Exception as e:
+            print(f"Error calling Gemini API ({model}): {e}")
+            last_error = e
+    raise Exception(f"All Gemini models unavailable: {last_error}")
 
 
 def call_openai(prompt, schema=None, api_key=None):
@@ -296,13 +295,14 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps(response_data).encode('utf-8'))
                 return
             except Exception as e:
+                print(f"InvokeLLM error: {e}")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
                 self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
                 self.end_headers()
-                self.wfile.write(json.dumps({"response": f"Server Error: {str(e)}"}).encode('utf-8'))
+                self.wfile.write(json.dumps({"response": "Zep AI is busy right now. Please try again in a moment, or WhatsApp us at +91-8368544821."}).encode('utf-8'))
                 return
 
         # Handle dynamic DB POST requests
