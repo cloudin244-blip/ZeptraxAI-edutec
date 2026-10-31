@@ -259,6 +259,7 @@ class handler(BaseHTTPRequestHandler):
             "handler": __file__,
             "db_router": "loaded" if handle_db_request else DB_ROUTER_ERROR,
             "db_connected": getattr(router, "db", None) is not None,
+            "bundled_files": {d: sorted(os.listdir(d))[:60] for d in {str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent)} if os.path.isdir(d)},
             "headers": dict(self.headers)
         }).encode('utf-8'))
 
