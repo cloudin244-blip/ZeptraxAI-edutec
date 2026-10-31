@@ -253,6 +253,7 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps({
             "status": "AI backend handler is active",
             "path": self.path,
+            "handler": __file__,
             "db_router": "loaded" if handle_db_request else DB_ROUTER_ERROR,
             "db_connected": getattr(router, "db", None) is not None,
             "headers": dict(self.headers)
