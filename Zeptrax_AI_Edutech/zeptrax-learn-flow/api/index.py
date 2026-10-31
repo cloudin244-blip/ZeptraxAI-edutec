@@ -10,15 +10,17 @@ import re
 import uuid
 import time
 
+# The database router sits next to this file so Vercel deploys it with the function
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 DB_ROUTER_ERROR = None
 try:
-    from Zeptrax_AI_Edutech.db_router import handle_db_request
-except ImportError as package_err:
-    try:
-        from db_router import handle_db_request
-    except ImportError as module_err:
-        handle_db_request = None
-        DB_ROUTER_ERROR = f"{package_err} | {module_err}"
+    import _db_router
+    from _db_router import handle_db_request
+except ImportError as import_err:
+    _db_router = None
+    handle_db_request = None
+    DB_ROUTER_ERROR = str(import_err)
 
 def load_dotenv():
     # Try to find .env file in the root or parent directories
@@ -155,7 +157,7 @@ class handler(BaseHTTPRequestHandler):
             # If MongoDB is connected, let's find or create a mock user for this provider
             if handle_db_request:
                 try:
-                    from db_router import db as database
+                    database = _db_router.db
                     if database is not None:
                         provider = social_match.group(1) or "google"
                         email = f"social_{provider}@zeptrax.in"
@@ -249,14 +251,11 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
-        router = sys.modules.get("Zeptrax_AI_Edutech.db_router") or sys.modules.get("db_router")
         self.wfile.write(json.dumps({
             "status": "AI backend handler is active",
             "path": self.path,
-            "handler": __file__,
             "db_router": "loaded" if handle_db_request else DB_ROUTER_ERROR,
-            "db_connected": getattr(router, "db", None) is not None,
-            "bundled_files": {d: sorted(os.listdir(d))[:60] for d in {str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent)} if os.path.isdir(d)},
+            "db_connected": getattr(_db_router, "db", None) is not None,
             "headers": dict(self.headers)
         }).encode('utf-8'))
 
