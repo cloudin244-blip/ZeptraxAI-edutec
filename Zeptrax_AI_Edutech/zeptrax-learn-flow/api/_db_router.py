@@ -3,7 +3,6 @@ import json
 import re
 import uuid
 import time
-import hmac
 import urllib.parse
 
 from pathlib import Path
@@ -73,10 +72,15 @@ def serialize_doc(doc):
 SUPER_ADMIN_EMAIL = "mydata193@gmail.com"
 
 # Collections only admins may read through the generic entity endpoints
-ADMIN_ONLY_READ = {"User", "AdminInvitation", "EmailLog", "AuditLog"}
+ADMIN_ONLY_READ = {"User", "AdminInvitation", "EmailLog", "AuditLog", "StudentProfile"}
+
+# Collections only admins may change through the generic entity endpoints
+ADMIN_ONLY_WRITE = {"User", "StudentProfile"}
 
 # No OTP email is sent yet, so verify-otp only signs in brand-new accounts within this window
 OTP_WINDOW_SECONDS = 30 * 60
+
+UNAVAILABLE = {"status": 503, "body": {"error": "Student records are temporarily unavailable. Please try again later."}}
 
 
 def public_user(user):
@@ -94,69 +98,115 @@ def is_admin(user):
 
 
 def display_name(name):
-    """Student name for partners; never reveals an email address"""
+    """Readable student name; an email-only name becomes its local part"""
     name = (name or "").strip()
     if "@" in name:
         name = re.sub(r"[._\-]+", " ", name.split("@", 1)[0]).strip().title()
     return name or "Student"
 
 
-def partner_students(body_data):
-    """Student showcase for hiring partners: names, courses, progress, certificates. No contact details."""
-    expected = os.environ.get("PARTNER_ACCESS_CODE", "").strip()
-    if not expected:
-        return {"status": 503, "body": {"error": "The student showcase is not set up yet. Please contact the ZeptraAI team."}}
+def clean_university(value):
+    """University name with single spaces, or '' to clear it"""
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"\s+", " ", value).strip()[:120]
 
-    try:
-        code = (json.loads(body_data) if body_data else {}).get("code", "")
-    except Exception:
-        code = ""
-    if not isinstance(code, str) or not hmac.compare_digest(code.strip().encode(), expected.encode()):
-        time.sleep(0.5)  # slow down code guessing
-        return {"status": 401, "body": {"error": "Invalid access code"}}
 
+def collect_students():
+    """One entry per student from enrollments and released certificates; `key` matches StudentProfile ids"""
+    course_titles = {c.get("id"): c.get("title") or c.get("name") for c in db["Course"].find({}, {"id": 1, "title": 1, "name": 1})}
+    user_names = {u.get("id"): u.get("full_name") or u.get("name") for u in db["User"].find({}, {"id": 1, "full_name": 1, "name": 1})}
+    universities = {p.get("id"): p.get("university") for p in db["StudentProfile"].find({}, {"id": 1, "university": 1})}
+
+    students = {}
+    email_keys = {}
+    for e in db["Enrollment"].find({}, {"id": 1, "student_id": 1, "student_email": 1, "student_name": 1, "course_id": 1, "progress_percent": 1, "status": 1}):
+        email = (e.get("student_email") or "").lower()
+        key = e.get("student_id") or email or e.get("id")
+        if email:
+            email_keys[email] = key
+        account_name = user_names.get(e.get("student_id"))
+        if account_name in (None, "", "Student"):
+            account_name = None
+        student = students.setdefault(key, {"key": key, "name": display_name(account_name or e.get("student_name")), "email": e.get("student_email") or "", "courses": [], "certificates": []})
+        student["courses"].append({
+            "title": course_titles.get(e.get("course_id")) or "Course",
+            "progress": max(0, min(100, int(e.get("progress_percent") or 0))),
+            "status": e.get("status") or "active",
+        })
+
+    for c in db["Certificate"].find({}, {"student_id": 1, "student_email": 1, "student_name": 1, "course_title": 1, "release_status": 1}):
+        if c.get("release_status") not in (None, "released"):
+            continue
+        email = (c.get("student_email") or "").lower()
+        key = c.get("student_id") if c.get("student_id") in students else email_keys.get(email, email or c.get("student_name"))
+        student = students.setdefault(key, {"key": key, "name": display_name(c.get("student_name")), "email": c.get("student_email") or "", "courses": [], "certificates": []})
+        student["certificates"].append(c.get("course_title") or "Certificate")
+
+    result = []
+    for s in students.values():
+        progress = [c["progress"] for c in s["courses"]]
+        s["avg_progress"] = round(sum(progress) / len(progress)) if progress else 100
+        s["university"] = universities.get(s["key"]) or ""
+        result.append(s)
+    result.sort(key=lambda s: (-len(s["certificates"]), -s["avg_progress"], s["name"].lower()))
+    return result
+
+
+def partner_universities():
+    """Public: universities our students come from, with student counts. No student details."""
     if db is None:
-        return {"status": 503, "body": {"error": "Student records are temporarily unavailable. Please try again later."}}
-
+        return UNAVAILABLE
     try:
-        course_titles = {c.get("id"): c.get("title") or c.get("name") for c in db["Course"].find({}, {"id": 1, "title": 1, "name": 1})}
-        user_names = {u.get("id"): u.get("full_name") or u.get("name") for u in db["User"].find({}, {"id": 1, "full_name": 1, "name": 1})}
-
-        students = {}
-        email_keys = {}
-        for e in db["Enrollment"].find({}, {"student_id": 1, "student_email": 1, "student_name": 1, "course_id": 1, "progress_percent": 1, "status": 1}):
-            email = (e.get("student_email") or "").lower()
-            key = e.get("student_id") or email or e.get("id")
-            if email:
-                email_keys[email] = key
-            account_name = user_names.get(e.get("student_id"))
-            if account_name in (None, "", "Student"):
-                account_name = None
-            student = students.setdefault(key, {"name": display_name(account_name or e.get("student_name")), "courses": [], "certificates": []})
-            student["courses"].append({
-                "title": course_titles.get(e.get("course_id")) or "Course",
-                "progress": max(0, min(100, int(e.get("progress_percent") or 0))),
-                "status": e.get("status") or "active",
-            })
-
-        for c in db["Certificate"].find({}, {"student_id": 1, "student_email": 1, "student_name": 1, "course_title": 1, "release_status": 1}):
-            if c.get("release_status") not in (None, "released"):
-                continue
-            email = (c.get("student_email") or "").lower()
-            key = c.get("student_id") if c.get("student_id") in students else email_keys.get(email, email or c.get("student_name"))
-            student = students.setdefault(key, {"name": display_name(c.get("student_name")), "courses": [], "certificates": []})
-            student["certificates"].append(c.get("course_title") or "Certificate")
-
-        result = []
-        for s in students.values():
-            progress = [c["progress"] for c in s["courses"]]
-            s["avg_progress"] = round(sum(progress) / len(progress)) if progress else 100
-            result.append(s)
-        result.sort(key=lambda s: (-len(s["certificates"]), -s["avg_progress"], s["name"].lower()))
-        return {"status": 200, "body": {"students": result}}
+        groups = {}
+        for s in collect_students():
+            if s["university"]:
+                group = groups.setdefault(s["university"].lower(), {"name": s["university"], "students": 0})
+                group["students"] += 1
+        result = sorted(groups.values(), key=lambda g: (-g["students"], g["name"].lower()))
+        return {"status": 200, "body": {"universities": result}}
     except Exception as e:
-        print(f"[partner_students] {e}")
+        print(f"[partner_universities] {e}")
+        return {"status": 500, "body": {"error": "Could not load universities"}}
+
+
+def admin_students(headers):
+    """Admins only: full student list with email, progress, certificates and university"""
+    if db is None:
+        return UNAVAILABLE
+    if not is_admin(get_authorized_user(headers)):
+        return {"status": 403, "body": {"error": "Admin access required"}}
+    try:
+        return {"status": 200, "body": {"students": collect_students()}}
+    except Exception as e:
+        print(f"[admin_students] {e}")
         return {"status": 500, "body": {"error": "Could not load student records"}}
+
+
+def set_student_university(headers, body_data):
+    """Admins only: set or clear one student's university"""
+    if db is None:
+        return UNAVAILABLE
+    admin = get_authorized_user(headers)
+    if not is_admin(admin):
+        return {"status": 403, "body": {"error": "Admin access required"}}
+    try:
+        data = json.loads(body_data) if body_data else {}
+    except Exception:
+        data = {}
+    key = data.get("key") if isinstance(data, dict) else None
+    if not isinstance(key, str) or not key.strip():
+        return {"status": 400, "body": {"error": "Student key is required"}}
+    university = clean_university(data.get("university"))
+    if university:
+        db["StudentProfile"].update_one(
+            {"id": key},
+            {"$set": {"id": key, "university": university, "updated_by": admin.get("email"), "updated_date": time.time()}},
+            upsert=True,
+        )
+    else:
+        db["StudentProfile"].delete_one({"id": key})
+    return {"status": 200, "body": {"key": key, "university": university}}
 
 
 def get_authorized_user(headers):
@@ -187,9 +237,13 @@ def handle_db_request(method, path, query_params, body_data, headers):
     if normalized.startswith("/api"):
         normalized = normalized[4:]
 
-    # POST /partner/students (answers even without a database, so partners see a clear message)
-    if normalized == "/partner/students" and method == "POST":
-        return partner_students(body_data)
+    # Partner page: public university list; full student list and university edits for admins only
+    if normalized == "/partner/universities" and method == "GET":
+        return partner_universities()
+    if normalized == "/admin/students" and method == "GET":
+        return admin_students(headers)
+    if normalized == "/admin/students/university" and method == "PUT":
+        return set_student_university(headers, body_data)
 
     if db is None:
         return None  # Database not initialized; fallback to static file mocks
@@ -385,7 +439,7 @@ def handle_db_request(method, path, query_params, body_data, headers):
         if not admin:
             if method == "GET" and entity in ADMIN_ONLY_READ:
                 return {"status": 403, "body": {"error": "Admin access required"}}
-            if entity == "User":
+            if entity in ADMIN_ONLY_WRITE:
                 return {"status": 403, "body": {"error": "Admin access required"}}
             if method == "GET" and entity == "Enrollment" and not requester:
                 return {"status": 401, "body": {"error": "Authentication required"}}

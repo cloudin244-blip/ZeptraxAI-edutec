@@ -59773,169 +59773,166 @@ const __ = [{
     icon: Cy
 }];
 
+function zptAuthHeaders() {
+    let e = "";
+    try {
+        e = localStorage.getItem("base44_access_token") || localStorage.getItem("token") || ""
+    } catch {}
+    return e ? {
+        Authorization: `Bearer ${e}`
+    } : {}
+}
+
 function ZptStudentCard({
-    student: e
+    student: e,
+    onSaved: t
 }) {
-    const t = `https://wa.me/${Ed}?text=${encodeURIComponent(`Hi ZeptraAI, I'm a hiring partner and would like to know more about your student ${e.name}.`)}`;
+    const [n, r] = P.useState(e.university || ""),
+        [i, o] = P.useState(!1),
+        [a, s] = P.useState(""),
+        l = n.trim() !== (e.university || ""),
+        u = async () => {
+            if (i || !l) return;
+            o(!0), s("");
+            try {
+                const f = await fetch("/api/admin/students/university", {
+                        method: "PUT",
+                        headers: {
+                            "Content-Type": "application/json",
+                            ...zptAuthHeaders()
+                        },
+                        body: JSON.stringify({
+                            key: e.key,
+                            university: n
+                        })
+                    }),
+                    d = await f.json().catch(() => ({}));
+                if (!f.ok) throw new Error(d.error || "Could not save. Please try again.");
+                r(d.university || ""), t(e.key, d.university || ""), s("Saved")
+            } catch (f) {
+                s(f.message || "Could not save. Please try again.")
+            }
+            o(!1)
+        };
     return m.jsxs("div", {
         className: "rounded-lg border border-border p-4 space-y-3",
         children: [m.jsxs("div", {
-            className: "flex items-start justify-between gap-3",
-            children: [m.jsxs("div", {
-                className: "min-w-0",
-                children: [m.jsx("p", {
-                    className: "text-sm font-semibold text-foreground truncate",
-                    children: e.name
-                }), m.jsxs("p", {
-                    className: "text-xs text-muted-foreground",
-                    children: [e.courses.length, e.courses.length === 1 ? " program" : " programs", " • ", e.avg_progress, "% average progress"]
-                })]
-            }), m.jsxs("a", {
-                href: t,
-                target: "_blank",
-                rel: "noreferrer",
-                className: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-600 text-white text-xs font-medium hover:bg-green-500 transition-colors shrink-0",
-                children: [m.jsx(tg, {
-                    className: "w-3.5 h-3.5"
-                }), "Enquire"]
+            className: "min-w-0",
+            children: [m.jsx("p", {
+                className: "text-sm font-semibold text-foreground truncate",
+                children: e.name
+            }), e.email && m.jsx("p", {
+                className: "text-xs text-muted-foreground truncate",
+                children: e.email
+            }), m.jsxs("p", {
+                className: "text-xs text-muted-foreground",
+                children: [e.courses.length, e.courses.length === 1 ? " program" : " programs", " • ", e.avg_progress, "% average progress"]
             })]
         }), e.courses.length > 0 && m.jsx("div", {
             className: "space-y-2",
-            children: e.courses.map((n, r) => {
-                const i = n.status === "completed" ? 100 : n.progress;
+            children: e.courses.map((f, d) => {
+                const p = f.status === "completed" ? 100 : f.progress;
                 return m.jsxs("div", {
                     children: [m.jsxs("div", {
                         className: "flex justify-between gap-2 text-xs",
                         children: [m.jsx("span", {
                             className: "text-foreground truncate",
-                            children: n.title
+                            children: f.title
                         }), m.jsx("span", {
                             className: "text-muted-foreground shrink-0",
-                            children: n.status === "completed" ? "Completed" : `${n.progress}%`
+                            children: f.status === "completed" ? "Completed" : `${f.progress}%`
                         })]
                     }), m.jsx("div", {
                         className: "h-1.5 rounded-full bg-secondary mt-1 overflow-hidden",
                         children: m.jsx("div", {
                             className: "h-full rounded-full bg-primary",
                             style: {
-                                width: `${i}%`
+                                width: `${p}%`
                             }
                         })
                     })]
-                }, r)
+                }, d)
             })
         }), e.certificates.length > 0 && m.jsx("div", {
             className: "flex flex-wrap gap-1.5",
-            children: e.certificates.map((n, r) => m.jsxs("span", {
+            children: e.certificates.map((f, d) => m.jsxs("span", {
                 className: "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-xs",
                 children: [m.jsx(Ro, {
                     className: "w-3 h-3"
-                }), n]
-            }, r))
+                }), f]
+            }, d))
+        }), m.jsxs("div", {
+            className: "space-y-2",
+            children: [m.jsx("p", {
+                className: "text-xs font-medium text-foreground",
+                children: "University"
+            }), m.jsxs("div", {
+                className: "flex gap-2",
+                children: [m.jsx("input", {
+                    type: "text",
+                    list: "zpt-university-options",
+                    value: n,
+                    onChange: f => {
+                        r(f.target.value), s("")
+                    },
+                    onKeyDown: f => {
+                        f.key === "Enter" && (f.preventDefault(), u())
+                    },
+                    placeholder: "Not set",
+                    "aria-label": `University for ${e.name}`,
+                    className: "flex-1 min-w-0 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+                }), m.jsxs("button", {
+                    type: "button",
+                    onClick: u,
+                    disabled: i || !l,
+                    className: "inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 shrink-0",
+                    children: [i && m.jsx(kn, {
+                        className: "w-4 h-4 animate-spin"
+                    }), "Save"]
+                })]
+            }), a && m.jsx("p", {
+                className: `text-xs ${a === "Saved" ? "text-green-400" : "text-red-400"}`,
+                children: a
+            })]
         })]
     })
 }
 
-function ZptStudentShowcase({
-    onRequestAccess: e
-}) {
-    const t = "zpt_partner_code",
-        [n, r] = P.useState(() => {
-            try {
-                return sessionStorage.getItem(t) || ""
-            } catch {
-                return ""
-            }
-        }),
-        [i, o] = P.useState(null),
-        [a, s] = P.useState(!1),
-        [l, u] = P.useState(""),
-        [f, d] = P.useState(""),
-        p = async () => {
-            const x = n.trim();
-            if (!x || a) return;
-            s(!0), u("");
-            try {
-                const v = await fetch("/api/partner/students", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            code: x
-                        })
-                    }),
-                    y = await v.json().catch(() => ({}));
-                if (!v.ok || !Array.isArray(y.students)) {
-                    if (v.status === 401) try {
-                        sessionStorage.removeItem(t)
-                    } catch {}
-                    throw new Error(y.error || "The student showcase is not available yet. Please try again later.")
-                }
-                o(y.students);
-                try {
-                    sessionStorage.setItem(t, x)
-                } catch {}
-            } catch (v) {
-                u(v.message || "Could not load students. Please try again.")
-            }
-            s(!1)
-        },
-        g = x => {
-            x.key === "Enter" && (x.preventDefault(), p())
-        };
-    if (i === null) return m.jsxs("div", {
-        className: "rounded-lg border border-border p-5 space-y-4",
-        children: [m.jsxs("div", {
-            className: "flex items-start gap-3",
-            children: [m.jsx(Iy, {
-                className: "w-5 h-5 text-primary shrink-0 mt-0.5"
-            }), m.jsxs("div", {
-                children: [m.jsx("p", {
-                    className: "text-sm font-medium text-foreground",
-                    children: "For hiring partners"
-                }), m.jsx("p", {
-                    className: "text-xs text-muted-foreground mt-1",
-                    children: "Enter the access code shared by the ZeptraAI team to view our students, their programs, progress and certificates."
-                })]
-            })]
-        }), m.jsxs("div", {
-            className: "flex gap-2",
-            children: [m.jsx("input", {
-                type: "password",
-                value: n,
-                onChange: x => r(x.target.value),
-                onKeyDown: g,
-                autoComplete: "off",
-                placeholder: "Access code",
-                "aria-label": "Partner access code",
-                className: "flex-1 min-w-0 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
-            }), m.jsxs("button", {
-                type: "button",
-                onClick: p,
-                disabled: a || !n.trim(),
-                className: "inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 shrink-0",
-                children: [a ? m.jsx(kn, {
-                    className: "w-4 h-4 animate-spin"
-                }) : m.jsx(pd, {
-                    className: "w-4 h-4"
-                }), "View Students"]
-            })]
-        }), l && m.jsx("p", {
-            className: "text-xs text-red-400",
-            children: l
-        }), m.jsxs("p", {
-            className: "text-xs text-muted-foreground",
-            children: ["Don't have a code? ", m.jsx("button", {
-                type: "button",
-                onClick: e,
-                className: "text-primary hover:underline",
-                children: "Request access"
-            }), " and we will share it with you on WhatsApp."]
-        })]
+function ZptAdminStudents() {
+    const [e, t] = P.useState(null),
+        [n, r] = P.useState(""),
+        [i, o] = P.useState("");
+    P.useEffect(() => {
+        let x = !0;
+        return fetch("/api/admin/students", {
+            headers: zptAuthHeaders()
+        }).then(async v => {
+            const y = await v.json().catch(() => ({}));
+            if (!v.ok || !Array.isArray(y.students)) throw new Error(y.error || "Could not load students. Please try again later.");
+            x && t(y.students)
+        }).catch(v => {
+            x && r(v.message || "Could not load students. Please try again later.")
+        }), () => {
+            x = !1
+        }
+    }, []);
+    if (n) return m.jsx("p", {
+        className: "text-xs text-red-400",
+        children: n
     });
-    const x = f.trim().toLowerCase(),
-        v = i.filter(y => !x || y.name.toLowerCase().includes(x) || y.courses.some(b => b.title.toLowerCase().includes(x)) || y.certificates.some(b => b.toLowerCase().includes(x)));
+    if (e === null) return m.jsx("div", {
+        className: "flex justify-center py-6",
+        children: m.jsx(kn, {
+            className: "w-5 h-5 animate-spin text-muted-foreground"
+        })
+    });
+    const a = (x, v) => t(y => y.map(b => b.key === x ? { ...b,
+            university: v
+        } : b)),
+        s = [...new Set(e.map(x => x.university).filter(Boolean))].sort((x, v) => x.localeCompare(v)),
+        l = e.filter(x => !x.university).length,
+        u = i.trim().toLowerCase(),
+        f = e.filter(x => !u || [x.name, x.email, x.university, ...x.courses.map(v => v.title), ...x.certificates].some(v => (v || "").toLowerCase().includes(u)));
     return m.jsxs("div", {
         className: "space-y-4",
         children: [m.jsxs("div", {
@@ -59944,41 +59941,38 @@ function ZptStudentShowcase({
                 className: "text-sm text-foreground",
                 children: [m.jsx("span", {
                     className: "font-bold",
-                    children: i.length
-                }), i.length === 1 ? " student" : " students"]
-            }), m.jsxs("button", {
-                type: "button",
-                onClick: () => {
-                    o(null), d("");
-                    try {
-                        sessionStorage.removeItem(t)
-                    } catch {}
-                    r("")
-                },
-                className: "inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground",
-                children: [m.jsx(pd, {
+                    children: e.length
+                }), e.length === 1 ? " student" : " students", l > 0 ? ` • ${l} without a university` : ""]
+            }), m.jsxs("span", {
+                className: "inline-flex items-center gap-1.5 text-xs text-primary shrink-0",
+                children: [m.jsx(Iy, {
                     className: "w-3.5 h-3.5"
-                }), "Lock"]
+                }), "Admin only"]
             })]
-        }), i.length > 0 && m.jsxs("div", {
+        }), e.length > 0 && m.jsxs("div", {
             className: "relative",
             children: [m.jsx(dl, {
                 className: "w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2"
             }), m.jsx("input", {
                 type: "text",
-                value: f,
-                onChange: y => d(y.target.value),
-                onKeyDown: y => {
-                    y.key === "Enter" && y.preventDefault()
+                value: i,
+                onChange: x => o(x.target.value),
+                onKeyDown: x => {
+                    x.key === "Enter" && x.preventDefault()
                 },
-                placeholder: "Search by name, program or certificate",
+                placeholder: "Search by name, email, program or university",
                 "aria-label": "Search students",
                 className: "w-full bg-background border border-border rounded-lg pl-9 pr-4 py-2 text-sm text-foreground outline-none focus:border-primary"
             })]
-        }), i.length === 0 ? m.jsx("p", {
+        }), m.jsx("datalist", {
+            id: "zpt-university-options",
+            children: s.map(x => m.jsx("option", {
+                value: x
+            }, x))
+        }), e.length === 0 ? m.jsx("p", {
             className: "text-sm text-muted-foreground text-center py-8",
-            children: "No students to show yet."
-        }) : v.length === 0 ? m.jsx("p", {
+            children: "No students yet."
+        }) : f.length === 0 ? m.jsx("p", {
             className: "text-sm text-muted-foreground text-center py-8",
             children: "No students match your search."
         }) : m.jsx("div", {
@@ -59986,10 +59980,108 @@ function ZptStudentShowcase({
             style: {
                 maxHeight: "560px"
             },
-            children: v.map((y, b) => m.jsx(ZptStudentCard, {
-                student: y
-            }, `${y.name}-${b}`))
+            children: f.map(x => m.jsx(ZptStudentCard, {
+                student: x,
+                onSaved: a
+            }, x.key))
         })]
+    })
+}
+
+function ZptUniversityList({
+    onHire: e
+}) {
+    const [t, n] = P.useState(null),
+        [r, i] = P.useState("");
+    P.useEffect(() => {
+        let a = !0;
+        return fetch("/api/partner/universities").then(async s => {
+            const l = await s.json().catch(() => ({}));
+            if (!s.ok || !Array.isArray(l.universities)) throw new Error(l.error || "Could not load universities. Please try again later.");
+            a && n(l.universities)
+        }).catch(s => {
+            a && i(s.message || "Could not load universities. Please try again later.")
+        }), () => {
+            a = !1
+        }
+    }, []);
+    const o = t ? t.reduce((a, s) => a + s.students, 0) : 0;
+    return m.jsxs("div", {
+        className: "rounded-lg border border-border p-5 space-y-4",
+        children: [m.jsxs("div", {
+            className: "flex items-start gap-3",
+            children: [m.jsx(Ry, {
+                className: "w-5 h-5 text-primary shrink-0 mt-0.5"
+            }), m.jsxs("div", {
+                children: [m.jsx("p", {
+                    className: "text-sm font-medium text-foreground",
+                    children: "Where our students come from"
+                }), m.jsx("p", {
+                    className: "text-xs text-muted-foreground mt-1",
+                    children: "Our learners join ZeptraAI from these universities. Individual student details are only available to the ZeptraAI team."
+                })]
+            })]
+        }), r ? m.jsx("p", {
+            className: "text-xs text-red-400",
+            children: r
+        }) : t === null ? m.jsx("div", {
+            className: "flex justify-center py-6",
+            children: m.jsx(kn, {
+                className: "w-5 h-5 animate-spin text-muted-foreground"
+            })
+        }) : t.length === 0 ? m.jsx("p", {
+            className: "text-sm text-muted-foreground text-center py-6",
+            children: "Our university list is coming soon."
+        }) : m.jsxs(m.Fragment, {
+            children: [m.jsxs("p", {
+                className: "text-xs text-muted-foreground",
+                children: [o, o === 1 ? " student from " : " students from ", t.length, t.length === 1 ? " university" : " universities"]
+            }), m.jsx("div", {
+                className: "grid sm:grid-cols-2 gap-3",
+                children: t.map(a => m.jsxs("div", {
+                    className: "flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2",
+                    children: [m.jsx("span", {
+                        className: "text-sm text-foreground truncate",
+                        children: a.name
+                    }), m.jsxs("span", {
+                        className: "text-xs text-muted-foreground shrink-0",
+                        children: [a.students, a.students === 1 ? " student" : " students"]
+                    })]
+                }, a.name))
+            })]
+        }), m.jsxs("p", {
+            className: "text-xs text-muted-foreground",
+            children: ["Want to hire our students? Choose ", m.jsx("button", {
+                type: "button",
+                onClick: e,
+                className: "text-primary hover:underline",
+                children: "Hire From Us"
+            }), "."]
+        }), m.jsxs("p", {
+            className: "text-xs text-muted-foreground",
+            children: ["ZeptraAI admin? ", m.jsx(Ie, {
+                to: "/login?from_url=/partnership",
+                className: "text-primary hover:underline",
+                children: "Log in"
+            }), " to see the full student list."]
+        })]
+    })
+}
+
+function ZptStudentShowcase({
+    onHire: e
+}) {
+    const {
+        isAdmin: t,
+        loading: n
+    } = lae();
+    return n ? m.jsx("div", {
+        className: "flex justify-center py-6",
+        children: m.jsx(kn, {
+            className: "w-5 h-5 animate-spin text-muted-foreground"
+        })
+    }) : t ? m.jsx(ZptAdminStudents, {}) : m.jsx(ZptUniversityList, {
+        onHire: e
     })
 }
 
@@ -60104,9 +60196,8 @@ function MOe() {
                         }, a.value))
                     })]
                 }), t.type === "view_students" ? m.jsx(ZptStudentShowcase, {
-                    onRequestAccess: () => n({ ...t,
-                        type: "hire_from_us",
-                        message: t.message || "Please share the partner access code so we can view your students."
+                    onHire: () => n({ ...t,
+                        type: "hire_from_us"
                     })
                 }) : m.jsxs(m.Fragment, {
                     children: [m.jsxs("div", {
