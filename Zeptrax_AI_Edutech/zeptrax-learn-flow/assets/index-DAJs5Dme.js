@@ -59767,7 +59767,231 @@ const __ = [{
     value: "become_partner",
     label: "Become a Partner",
     icon: SO
+}, {
+    value: "view_students",
+    label: "View Our Students",
+    icon: Cy
 }];
+
+function ZptStudentCard({
+    student: e
+}) {
+    const t = `https://wa.me/${Ed}?text=${encodeURIComponent(`Hi ZeptraAI, I'm a hiring partner and would like to know more about your student ${e.name}.`)}`;
+    return m.jsxs("div", {
+        className: "rounded-lg border border-border p-4 space-y-3",
+        children: [m.jsxs("div", {
+            className: "flex items-start justify-between gap-3",
+            children: [m.jsxs("div", {
+                className: "min-w-0",
+                children: [m.jsx("p", {
+                    className: "text-sm font-semibold text-foreground truncate",
+                    children: e.name
+                }), m.jsxs("p", {
+                    className: "text-xs text-muted-foreground",
+                    children: [e.courses.length, e.courses.length === 1 ? " program" : " programs", " • ", e.avg_progress, "% average progress"]
+                })]
+            }), m.jsxs("a", {
+                href: t,
+                target: "_blank",
+                rel: "noreferrer",
+                className: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-600 text-white text-xs font-medium hover:bg-green-500 transition-colors shrink-0",
+                children: [m.jsx(tg, {
+                    className: "w-3.5 h-3.5"
+                }), "Enquire"]
+            })]
+        }), e.courses.length > 0 && m.jsx("div", {
+            className: "space-y-2",
+            children: e.courses.map((n, r) => {
+                const i = n.status === "completed" ? 100 : n.progress;
+                return m.jsxs("div", {
+                    children: [m.jsxs("div", {
+                        className: "flex justify-between gap-2 text-xs",
+                        children: [m.jsx("span", {
+                            className: "text-foreground truncate",
+                            children: n.title
+                        }), m.jsx("span", {
+                            className: "text-muted-foreground shrink-0",
+                            children: n.status === "completed" ? "Completed" : `${n.progress}%`
+                        })]
+                    }), m.jsx("div", {
+                        className: "h-1.5 rounded-full bg-secondary mt-1 overflow-hidden",
+                        children: m.jsx("div", {
+                            className: "h-full rounded-full bg-primary",
+                            style: {
+                                width: `${i}%`
+                            }
+                        })
+                    })]
+                }, r)
+            })
+        }), e.certificates.length > 0 && m.jsx("div", {
+            className: "flex flex-wrap gap-1.5",
+            children: e.certificates.map((n, r) => m.jsxs("span", {
+                className: "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-xs",
+                children: [m.jsx(Ro, {
+                    className: "w-3 h-3"
+                }), n]
+            }, r))
+        })]
+    })
+}
+
+function ZptStudentShowcase({
+    onRequestAccess: e
+}) {
+    const t = "zpt_partner_code",
+        [n, r] = P.useState(() => {
+            try {
+                return sessionStorage.getItem(t) || ""
+            } catch {
+                return ""
+            }
+        }),
+        [i, o] = P.useState(null),
+        [a, s] = P.useState(!1),
+        [l, u] = P.useState(""),
+        [f, d] = P.useState(""),
+        p = async () => {
+            const x = n.trim();
+            if (!x || a) return;
+            s(!0), u("");
+            try {
+                const v = await fetch("/api/partner/students", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            code: x
+                        })
+                    }),
+                    y = await v.json().catch(() => ({}));
+                if (!v.ok) {
+                    if (v.status === 401) try {
+                        sessionStorage.removeItem(t)
+                    } catch {}
+                    throw new Error(y.error || "Could not load students. Please try again.")
+                }
+                o(y.students || []);
+                try {
+                    sessionStorage.setItem(t, x)
+                } catch {}
+            } catch (v) {
+                u(v.message || "Could not load students. Please try again.")
+            }
+            s(!1)
+        },
+        g = x => {
+            x.key === "Enter" && (x.preventDefault(), p())
+        };
+    if (i === null) return m.jsxs("div", {
+        className: "rounded-lg border border-border p-5 space-y-4",
+        children: [m.jsxs("div", {
+            className: "flex items-start gap-3",
+            children: [m.jsx(Iy, {
+                className: "w-5 h-5 text-primary shrink-0 mt-0.5"
+            }), m.jsxs("div", {
+                children: [m.jsx("p", {
+                    className: "text-sm font-medium text-foreground",
+                    children: "For hiring partners"
+                }), m.jsx("p", {
+                    className: "text-xs text-muted-foreground mt-1",
+                    children: "Enter the access code shared by the ZeptraAI team to view our students, their programs, progress and certificates."
+                })]
+            })]
+        }), m.jsxs("div", {
+            className: "flex gap-2",
+            children: [m.jsx("input", {
+                type: "password",
+                value: n,
+                onChange: x => r(x.target.value),
+                onKeyDown: g,
+                autoComplete: "off",
+                placeholder: "Access code",
+                "aria-label": "Partner access code",
+                className: "flex-1 min-w-0 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+            }), m.jsxs("button", {
+                type: "button",
+                onClick: p,
+                disabled: a || !n.trim(),
+                className: "inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 shrink-0",
+                children: [a ? m.jsx(kn, {
+                    className: "w-4 h-4 animate-spin"
+                }) : m.jsx(pd, {
+                    className: "w-4 h-4"
+                }), "View Students"]
+            })]
+        }), l && m.jsx("p", {
+            className: "text-xs text-red-400",
+            children: l
+        }), m.jsxs("p", {
+            className: "text-xs text-muted-foreground",
+            children: ["Don't have a code? ", m.jsx("button", {
+                type: "button",
+                onClick: e,
+                className: "text-primary hover:underline",
+                children: "Request access"
+            }), " and we will share it with you on WhatsApp."]
+        })]
+    });
+    const x = f.trim().toLowerCase(),
+        v = i.filter(y => !x || y.name.toLowerCase().includes(x) || y.courses.some(b => b.title.toLowerCase().includes(x)) || y.certificates.some(b => b.toLowerCase().includes(x)));
+    return m.jsxs("div", {
+        className: "space-y-4",
+        children: [m.jsxs("div", {
+            className: "flex items-center justify-between gap-3",
+            children: [m.jsxs("p", {
+                className: "text-sm text-foreground",
+                children: [m.jsx("span", {
+                    className: "font-bold",
+                    children: i.length
+                }), i.length === 1 ? " student" : " students"]
+            }), m.jsxs("button", {
+                type: "button",
+                onClick: () => {
+                    o(null), d("");
+                    try {
+                        sessionStorage.removeItem(t)
+                    } catch {}
+                    r("")
+                },
+                className: "inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground",
+                children: [m.jsx(pd, {
+                    className: "w-3.5 h-3.5"
+                }), "Lock"]
+            })]
+        }), i.length > 0 && m.jsxs("div", {
+            className: "relative",
+            children: [m.jsx(dl, {
+                className: "w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2"
+            }), m.jsx("input", {
+                type: "text",
+                value: f,
+                onChange: y => d(y.target.value),
+                onKeyDown: y => {
+                    y.key === "Enter" && y.preventDefault()
+                },
+                placeholder: "Search by name, program or certificate",
+                "aria-label": "Search students",
+                className: "w-full bg-background border border-border rounded-lg pl-9 pr-4 py-2 text-sm text-foreground outline-none focus:border-primary"
+            })]
+        }), i.length === 0 ? m.jsx("p", {
+            className: "text-sm text-muted-foreground text-center py-8",
+            children: "No students to show yet."
+        }) : v.length === 0 ? m.jsx("p", {
+            className: "text-sm text-muted-foreground text-center py-8",
+            children: "No students match your search."
+        }) : m.jsx("div", {
+            className: "space-y-3 overflow-y-auto pr-2",
+            style: {
+                maxHeight: "560px"
+            },
+            children: v.map((y, b) => m.jsx(ZptStudentCard, {
+                student: y
+            }, `${y.name}-${b}`))
+        })]
+    })
+}
 
 function MOe() {
     const {
@@ -59781,7 +60005,7 @@ function MOe() {
         message: ""
     }), [r, i] = P.useState(!1), o = a => {
         var u;
-        a.preventDefault();
+        if (a.preventDefault(), t.type === "view_students") return;
         const s = ((u = __.find(f => f.value === t.type)) == null ? void 0 : u.label) || t.type,
             l = `*New Partnership Inquiry - ZeptraAI*%0A%0A*Name:* ${t.name}%0A*Email:* ${t.email}%0A*Phone:* ${t.phone}%0A*Company:* ${t.company}%0A*Type:* ${s}%0A%0A*Message:*%0A${t.message}`;
         window.open(`https://wa.me/${Ed}?text=${l}`, "_blank"), i(!0), e({
@@ -59867,6 +60091,9 @@ function MOe() {
                             onClick: () => n({ ...t,
                                 type: a.value
                             }),
+                            style: a.value === "view_students" ? {
+                                gridColumn: "1 / -1"
+                            } : void 0,
                             className: `flex items-center gap-3 p-3 rounded-lg border text-left transition-colors ${t.type===a.value?"border-primary bg-primary/10":"border-border hover:bg-secondary"}`,
                             children: [m.jsx(a.icon, {
                                 className: "w-5 h-5 text-primary shrink-0"
@@ -59876,7 +60103,13 @@ function MOe() {
                             })]
                         }, a.value))
                     })]
-                }), m.jsxs("div", {
+                }), t.type === "view_students" ? m.jsx(ZptStudentShowcase, {
+                    onRequestAccess: () => n({ ...t,
+                        type: "hire_from_us",
+                        message: t.message || "Please share the partner access code so we can view your students."
+                    })
+                }) : m.jsxs(m.Fragment, {
+                    children: [m.jsxs("div", {
                     className: "grid sm:grid-cols-2 gap-4",
                     children: [m.jsxs("div", {
                         children: [m.jsx("label", {
@@ -59957,6 +60190,7 @@ function MOe() {
                 }), m.jsx("p", {
                     className: "text-center text-xs text-muted-foreground",
                     children: "Your inquiry will be sent directly to our WhatsApp at +91 93685 44821"
+                })]
                 })]
             })]
         }), m.jsx(ir, {})]

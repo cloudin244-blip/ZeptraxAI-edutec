@@ -3,6 +3,7 @@ import json
 import re
 import uuid
 import time
+import hmac
 import urllib.parse
 
 from pathlib import Path
@@ -67,6 +68,96 @@ def serialize_doc(doc):
         return doc
     return doc
 
+# Matches the super-admin email hard-coded in the frontend
+SUPER_ADMIN_EMAIL = "mydata193@gmail.com"
+
+# Collections only admins may read through the generic entity endpoints
+ADMIN_ONLY_READ = {"User", "AdminInvitation", "EmailLog", "AuditLog"}
+
+# No OTP email is sent yet, so verify-otp only signs in brand-new accounts within this window
+OTP_WINDOW_SECONDS = 30 * 60
+
+
+def public_user(user):
+    """User document without secrets (password, session token)"""
+    if not user:
+        return user
+    user = dict(user)
+    user.pop("password", None)
+    user.pop("token", None)
+    return user
+
+
+def is_admin(user):
+    return bool(user) and (user.get("role") in ("admin", "super_admin") or user.get("email") == SUPER_ADMIN_EMAIL)
+
+
+def display_name(name):
+    """Student name for partners; never reveals an email address"""
+    name = (name or "").strip()
+    if "@" in name:
+        name = re.sub(r"[._\-]+", " ", name.split("@", 1)[0]).strip().title()
+    return name or "Student"
+
+
+def partner_students(body_data):
+    """Student showcase for hiring partners: names, courses, progress, certificates. No contact details."""
+    expected = os.environ.get("PARTNER_ACCESS_CODE", "").strip()
+    if not expected:
+        return {"status": 503, "body": {"error": "The student showcase is not set up yet. Please contact the ZeptraAI team."}}
+
+    try:
+        code = (json.loads(body_data) if body_data else {}).get("code", "")
+    except Exception:
+        code = ""
+    if not isinstance(code, str) or not hmac.compare_digest(code.strip().encode(), expected.encode()):
+        time.sleep(0.5)  # slow down code guessing
+        return {"status": 401, "body": {"error": "Invalid access code"}}
+
+    if db is None:
+        return {"status": 503, "body": {"error": "Student records are temporarily unavailable. Please try again later."}}
+
+    try:
+        course_titles = {c.get("id"): c.get("title") or c.get("name") for c in db["Course"].find({}, {"id": 1, "title": 1, "name": 1})}
+        user_names = {u.get("id"): u.get("full_name") or u.get("name") for u in db["User"].find({}, {"id": 1, "full_name": 1, "name": 1})}
+
+        students = {}
+        email_keys = {}
+        for e in db["Enrollment"].find({}, {"student_id": 1, "student_email": 1, "student_name": 1, "course_id": 1, "progress_percent": 1, "status": 1}):
+            email = (e.get("student_email") or "").lower()
+            key = e.get("student_id") or email or e.get("id")
+            if email:
+                email_keys[email] = key
+            account_name = user_names.get(e.get("student_id"))
+            if account_name in (None, "", "Student"):
+                account_name = None
+            student = students.setdefault(key, {"name": display_name(account_name or e.get("student_name")), "courses": [], "certificates": []})
+            student["courses"].append({
+                "title": course_titles.get(e.get("course_id")) or "Course",
+                "progress": max(0, min(100, int(e.get("progress_percent") or 0))),
+                "status": e.get("status") or "active",
+            })
+
+        for c in db["Certificate"].find({}, {"student_id": 1, "student_email": 1, "student_name": 1, "course_title": 1, "release_status": 1}):
+            if c.get("release_status") not in (None, "released"):
+                continue
+            email = (c.get("student_email") or "").lower()
+            key = c.get("student_id") if c.get("student_id") in students else email_keys.get(email, email or c.get("student_name"))
+            student = students.setdefault(key, {"name": display_name(c.get("student_name")), "courses": [], "certificates": []})
+            student["certificates"].append(c.get("course_title") or "Certificate")
+
+        result = []
+        for s in students.values():
+            progress = [c["progress"] for c in s["courses"]]
+            s["avg_progress"] = round(sum(progress) / len(progress)) if progress else 100
+            result.append(s)
+        result.sort(key=lambda s: (-len(s["certificates"]), -s["avg_progress"], s["name"].lower()))
+        return {"status": 200, "body": {"students": result}}
+    except Exception as e:
+        print(f"[partner_students] {e}")
+        return {"status": 500, "body": {"error": "Could not load student records"}}
+
+
 def get_authorized_user(headers):
     """Helper to authenticate user using Authorization Bearer token from header"""
     if db is None:
@@ -90,13 +181,17 @@ def handle_db_request(method, path, query_params, body_data, headers):
     Core dynamic router that intercepts base44 entity CRUD and auth endpoints 
     and handles them in MongoDB collections.
     """
-    if db is None:
-        return None  # Database not initialized; fallback to static file mocks
-
     # Normalize path (remove leading /api if present)
     normalized = path
     if normalized.startswith("/api"):
         normalized = normalized[4:]
+
+    # POST /partner/students (answers even without a database, so partners see a clear message)
+    if normalized == "/partner/students" and method == "POST":
+        return partner_students(body_data)
+
+    if db is None:
+        return None  # Database not initialized; fallback to static file mocks
 
     # --- 1. AUTHENTICATION ENDPOINTS ---
     
@@ -123,8 +218,9 @@ def handle_db_request(method, path, query_params, body_data, headers):
                 "email": email,
                 "password": user_data.get("password", ""),  # In production, hash this
                 "name": user_data.get("name", "Student"),
-                "role": user_data.get("role", "user"),
+                "role": "user",  # never trust a client-supplied role
                 "token": token,
+                "verified": False,
                 "created_at": time.time(),
                 "app_id": app_id
             }
@@ -184,7 +280,13 @@ def handle_db_request(method, path, query_params, body_data, headers):
             user = db["User"].find_one({"email": email})
             if not user:
                 return {"status": 404, "body": {"error": "User not found"}}
-                
+
+            # No OTP is emailed yet, so this must not hand out tokens for existing accounts
+            if user.get("verified") is not False or time.time() - user.get("created_at", 0) > OTP_WINDOW_SECONDS:
+                message = "Verification expired. Please log in with your email and password."
+                return {"status": 401, "body": {"error": message, "message": message}}
+            db["User"].update_one({"_id": user["_id"]}, {"$set": {"verified": True}})
+
             token = user.get("token")
             if not token:
                 token = uuid.uuid4().hex
@@ -254,8 +356,8 @@ def handle_db_request(method, path, query_params, body_data, headers):
                             "detail": "You must be logged in to perform this operation."
                         }
                     }
-                return {"status": 200, "body": user}
-                
+                return {"status": 200, "body": public_user(user)}
+
             elif method == "PUT":
                 user = get_authorized_user(headers)
                 if not user:
@@ -267,15 +369,35 @@ def handle_db_request(method, path, query_params, body_data, headers):
                     update_data.pop("id", None)
                     update_data.pop("email", None)
                     update_data.pop("token", None)
-                    
+                    update_data.pop("role", None)  # users must not promote themselves
+                    update_data.pop("verified", None)
+
                     db["User"].update_one({"id": user["id"]}, {"$set": update_data})
                     updated_user = db["User"].find_one({"id": user["id"]})
-                    return {"status": 200, "body": serialize_doc(updated_user)}
+                    return {"status": 200, "body": public_user(serialize_doc(updated_user))}
                 except Exception as e:
                     return {"status": 500, "body": {"error": str(e)}}
 
+        # ACCESS CONTROL
+        requester = get_authorized_user(headers)
+        admin = is_admin(requester)
+        if not admin:
+            if method == "GET" and entity in ADMIN_ONLY_READ:
+                return {"status": 403, "body": {"error": "Admin access required"}}
+            if entity == "User":
+                return {"status": 403, "body": {"error": "Admin access required"}}
+            if method == "GET" and entity == "Enrollment" and not requester:
+                return {"status": 401, "body": {"error": "Authentication required"}}
+            # Bulk delete / update-many can wipe whole collections
+            if (method == "DELETE" and (not item_id or item_id in ("bulk", "update-many"))) or method == "PATCH":
+                return {"status": 403, "body": {"error": "Admin access required"}}
+        # Students only ever see their own enrollments
+        own_enrollments = None
+        if entity == "Enrollment" and not admin and requester:
+            own_enrollments = {"$or": [{"student_id": requester.get("id")}, {"student_email": requester.get("email")}]}
+
         # GENERAL CRUD OPERATIONS FOR ENTITIES
-        
+
         # A. GET requests (List / Filter / Retrieve)
         if method == "GET":
             # Retrieve single document by ID
@@ -285,8 +407,11 @@ def handle_db_request(method, path, query_params, body_data, headers):
                     doc = collection.find_one({"_id": item_id})  # Fallback to ObjectId string
                 if not doc:
                     return {"status": 404, "body": {"error": f"Item {item_id} not found in {entity}"}}
-                return {"status": 200, "body": serialize_doc(doc)}
-                
+                if own_enrollments and doc.get("student_id") != requester.get("id") and doc.get("student_email") != requester.get("email"):
+                    return {"status": 404, "body": {"error": f"Item {item_id} not found in {entity}"}}
+                doc = serialize_doc(doc)
+                return {"status": 200, "body": public_user(doc) if entity == "User" else doc}
+
             # List or filter documents
             else:
                 filter_dict = {}
@@ -296,7 +421,13 @@ def handle_db_request(method, path, query_params, body_data, headers):
                         filter_dict = json.loads(q_param[0])
                     except Exception as e:
                         print(f"Error parsing filter: {e}")
-                
+
+                # Anyone may verify a certificate by its code; full certificate lists are admin-only
+                if entity == "Certificate" and not admin and not (isinstance(filter_dict, dict) and filter_dict.get("certificate_code")):
+                    return {"status": 403, "body": {"error": "Admin access required"}}
+                if own_enrollments:
+                    filter_dict = {"$and": [filter_dict, own_enrollments]} if filter_dict else own_enrollments
+
                 # Setup sorting
                 sort_list = []
                 sort_param = query_params.get("sort")
@@ -339,8 +470,10 @@ def handle_db_request(method, path, query_params, body_data, headers):
                 if limit_val:
                     cursor = cursor.limit(limit_val)
                     
-                results = list(cursor)
-                return {"status": 200, "body": serialize_doc(results)}
+                results = serialize_doc(list(cursor))
+                if entity == "User":
+                    results = [public_user(u) for u in results]
+                return {"status": 200, "body": results}
                 
         # B. POST requests (Create / Bulk Create)
         elif method == "POST":
