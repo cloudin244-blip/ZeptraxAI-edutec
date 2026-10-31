@@ -10,6 +10,9 @@ import re
 import uuid
 import time
 
+# On Vercel (project root = Zeptrax_AI_Edutech) the folder holding db_router.py is not on the import path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 DB_ROUTER_ERROR = None
 try:
     from Zeptrax_AI_Edutech.db_router import handle_db_request
