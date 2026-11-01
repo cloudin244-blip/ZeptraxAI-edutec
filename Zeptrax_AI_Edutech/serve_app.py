@@ -300,6 +300,11 @@ class AppHandler(SimpleHTTPRequestHandler):
             parsed_path = "/index.html"
 
         safe_path = self._resolve_candidate(parsed_path)
+        if not safe_path and parsed_path.startswith("/api/"):
+            # Same as the vercel.json rewrite: static API responses (e.g. public settings) live in static-api/
+            safe_path = self._resolve_candidate("/static-api/" + parsed_path[len("/api/"):])
+        if safe_path and safe_path.endswith(".py"):
+            safe_path = None  # never serve backend source files
         if not safe_path:
             if parsed_path.startswith("/api/"):
                 self.send_error(404, "Not Found")

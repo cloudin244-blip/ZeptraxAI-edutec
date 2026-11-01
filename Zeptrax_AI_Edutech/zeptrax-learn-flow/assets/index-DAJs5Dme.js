@@ -26710,7 +26710,8 @@ const uae = {
         Rocket: uB,
         Mail: mc,
         ShieldCheck: Iy,
-        Trophy: rg
+        Trophy: rg,
+        GraduationCap: Ry
     },
     cae = [{
         id: "dashboard",
@@ -26720,6 +26721,10 @@ const uae = {
         id: "records",
         label: "Records",
         icon: "Users"
+    }, {
+        id: "students",
+        label: "Students",
+        icon: "GraduationCap"
     }, {
         id: "modules",
         label: "Modules",
@@ -58510,7 +58515,8 @@ const AOe = {
     "email-logs": bOe,
     "verify-cert": wOe,
     "admin-mgmt": SOe,
-    leaderboard: _Oe
+    leaderboard: _Oe,
+        students: ZptAdminStudentsTab
 };
 
 function EOe() {
@@ -59943,11 +59949,6 @@ function ZptAdminStudents() {
                     className: "font-bold",
                     children: e.length
                 }), e.length === 1 ? " student" : " students", l > 0 ? ` • ${l} without a university` : ""]
-            }), m.jsxs("span", {
-                className: "inline-flex items-center gap-1.5 text-xs text-primary shrink-0",
-                children: [m.jsx(Iy, {
-                    className: "w-3.5 h-3.5"
-                }), "Admin only"]
             })]
         }), e.length > 0 && m.jsxs("div", {
             className: "relative",
@@ -60057,31 +60058,27 @@ function ZptUniversityList({
                 className: "text-primary hover:underline",
                 children: "Hire From Us"
             }), "."]
-        }), m.jsxs("p", {
-            className: "text-xs text-muted-foreground",
-            children: ["ZeptraAI admin? ", m.jsx(Ie, {
-                to: "/login?from_url=/partnership",
-                className: "text-primary hover:underline",
-                children: "Log in"
-            }), " to see the full student list."]
         })]
     })
 }
 
-function ZptStudentShowcase({
-    onHire: e
-}) {
-    const {
-        isAdmin: t,
-        loading: n
-    } = lae();
-    return n ? m.jsx("div", {
-        className: "flex justify-center py-6",
-        children: m.jsx(kn, {
-            className: "w-5 h-5 animate-spin text-muted-foreground"
-        })
-    }) : t ? m.jsx(ZptAdminStudents, {}) : m.jsx(ZptUniversityList, {
-        onHire: e
+function ZptAdminStudentsTab() {
+    return m.jsxs("div", {
+        className: "space-y-6",
+        children: [m.jsxs("div", {
+            children: [m.jsxs("h1", {
+                className: "text-2xl font-bold font-heading flex items-center gap-2",
+                children: [m.jsx(Ry, {
+                    className: "w-6 h-6 text-cyan-400"
+                }), "Students"]
+            }), m.jsx("p", {
+                className: "text-sm text-muted-foreground mt-1",
+                children: "Every student with their programs, progress and certificates. Set each student's university here; the Partner page shows only the list of universities."
+            })]
+        }), m.jsx("div", {
+            className: "max-w-3xl",
+            children: m.jsx(ZptAdminStudents, {})
+        })]
     })
 }
 
@@ -60195,7 +60192,7 @@ function MOe() {
                             })]
                         }, a.value))
                     })]
-                }), t.type === "view_students" ? m.jsx(ZptStudentShowcase, {
+                }), t.type === "view_students" ? m.jsx(ZptUniversityList, {
                     onHire: () => n({ ...t,
                         type: "hire_from_us"
                     })
