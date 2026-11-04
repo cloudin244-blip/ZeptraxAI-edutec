@@ -3,6 +3,9 @@ import json
 import re
 import uuid
 import time
+import hmac
+import hashlib
+import secrets
 import urllib.parse
 
 from pathlib import Path
@@ -33,12 +36,17 @@ try:
     mongo_uri = os.environ.get("MONGODB_URI")
     if mongo_uri:
         from pymongo import MongoClient
-        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000, tlsAllowInvalidCertificates=True)
+        try:
+            import certifi
+            tls_options = {"tlsCAFile": certifi.where()}
+        except ImportError:
+            tls_options = {}
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000, **tls_options)
         db = client["zeptrax_db"]
         # Ping check
         client.admin.command('ping')
         print("[MongoDB] Connected successfully to zeptrax_db.")
-        
+
         # Build performance indexes for high-traffic scalability
         try:
             db["User"].create_index("email", unique=True)
@@ -46,6 +54,11 @@ try:
             db["Student"].create_index("id", unique=True)
             db["Course"].create_index("id", unique=True)
             db["Enrollment"].create_index("id", unique=True)
+            db["University"].create_index("id", unique=True)
+            db["University"].create_index("code", unique=True)
+            db["Invitation"].create_index("token_hash", unique=True)
+            db["Invitation"].create_index("campaign_id")
+            db["User"].create_index("university_id")
             print("[MongoDB] Performance indexes built/verified successfully.")
         except Exception as idx_err:
             print(f"[MongoDB] Index creation warning: {idx_err}")
@@ -68,14 +81,27 @@ def serialize_doc(doc):
         return doc
     return doc
 
-# Matches the super-admin email hard-coded in the frontend
-SUPER_ADMIN_EMAIL = "mydata193@gmail.com"
+# Bootstrap only: this account is given the super_admin role in the database when it registers or logs in.
+# Override with the SUPER_ADMIN_EMAIL environment variable.
+SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "mydata193@gmail.com").strip().lower()
 
 # Collections only admins may read through the generic entity endpoints
-ADMIN_ONLY_READ = {"User", "AdminInvitation", "EmailLog", "AuditLog", "StudentProfile"}
+ADMIN_ONLY_READ = {"User", "AdminInvitation", "EmailLog", "AuditLog", "StudentProfile",
+                   "University", "InvitationCampaign", "Invitation"}
 
 # Collections only admins may change through the generic entity endpoints
-ADMIN_ONLY_WRITE = {"User", "StudentProfile"}
+ADMIN_ONLY_WRITE = {"User", "StudentProfile", "University", "InvitationCampaign", "Invitation",
+                    "AdminInvitation", "Certificate", "Course", "CourseModule", "Document",
+                    "EmailLog", "Project", "TeamMember", "Review"}
+
+# Collections anyone (even logged out) may add to through the generic entity endpoints
+ANONYMOUS_CREATE_OK = {"AuditLog"}
+
+# User fields that only the backend sets
+PROTECTED_USER_FIELDS = ("_id", "id", "email", "token", "role", "verified", "password", "password_hash",
+                         "university_id", "department", "batch", "invitation_id")
+
+PBKDF2_ITERATIONS = 200_000
 
 # No OTP email is sent yet, so verify-otp only signs in brand-new accounts within this window
 OTP_WINDOW_SECONDS = 30 * 60
@@ -89,12 +115,52 @@ def public_user(user):
         return user
     user = dict(user)
     user.pop("password", None)
+    user.pop("password_hash", None)
     user.pop("token", None)
     return user
 
 
 def is_admin(user):
-    return bool(user) and (user.get("role") in ("admin", "super_admin") or user.get("email") == SUPER_ADMIN_EMAIL)
+    """Zeptrax staff: platform admins and the super admin"""
+    return bool(user) and user.get("role") in ("admin", "super_admin")
+
+
+def is_super_admin(user):
+    return bool(user) and user.get("role") == "super_admin"
+
+
+def normalize_email(email):
+    return email.strip().lower() if isinstance(email, str) else ""
+
+
+def hash_password(password):
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), PBKDF2_ITERATIONS)
+    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt}${digest.hex()}"
+
+
+def check_password(user, password):
+    """True if `password` matches; accepts legacy plain-text passwords so they can be upgraded"""
+    if not isinstance(password, str) or not user:
+        return False
+    stored = user.get("password_hash")
+    if stored:
+        try:
+            _, iterations, salt, expected = stored.split("$")
+            digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), int(iterations))
+            return hmac.compare_digest(digest.hex(), expected)
+        except Exception:
+            return False
+    legacy = user.get("password")
+    return isinstance(legacy, str) and legacy != "" and hmac.compare_digest(legacy.encode(), password.encode())
+
+
+def apply_bootstrap_role(user):
+    """Give the configured super-admin account its role in the database"""
+    if user and normalize_email(user.get("email")) == SUPER_ADMIN_EMAIL and user.get("role") != "super_admin":
+        db["User"].update_one({"_id": user["_id"]}, {"$set": {"role": "super_admin"}})
+        user["role"] = "super_admin"
+    return user
 
 
 def display_name(name):
@@ -159,10 +225,20 @@ def partner_universities():
         return UNAVAILABLE
     try:
         groups = {}
-        for s in collect_students():
-            if s["university"]:
-                group = groups.setdefault(s["university"].lower(), {"name": s["university"], "students": 0})
+        counted = set()
+
+        def add(name, key):
+            if name and key not in counted:
+                counted.add(key)
+                group = groups.setdefault(name.lower(), {"name": name, "students": 0})
                 group["students"] += 1
+
+        for s in collect_students():
+            add(s["university"], s["key"])
+        # Students who joined through a university invitation on the portal
+        active = {u["id"]: u["name"] for u in db["University"].find({"status": {"$ne": "inactive"}}, {"id": 1, "name": 1})}
+        for u in db["User"].find({"role": "student", "university_id": {"$in": list(active)}}, {"id": 1, "university_id": 1}):
+            add(active[u["university_id"]], u["id"])
         result = sorted(groups.values(), key=lambda g: (-g["students"], g["name"].lower()))
         return {"status": 200, "body": {"universities": result}}
     except Exception as e:
@@ -213,23 +289,27 @@ def get_authorized_user(headers):
     """Helper to authenticate user using Authorization Bearer token from header"""
     if db is None:
         return None
-    
+
     auth_header = None
     for key, val in headers.items():
         if key.lower() == "authorization":
             auth_header = val
             break
-            
+
     if not auth_header or not auth_header.startswith("Bearer "):
         return None
-        
+
     token = auth_header.split(" ", 1)[1].strip()
-    user = db["User"].find_one({"token": token})
+    if not token:
+        return None
+    user = apply_bootstrap_role(db["User"].find_one({"token": token}))
+    if user and user.get("status") == "inactive":
+        return None
     return serialize_doc(user)
 
 def handle_db_request(method, path, query_params, body_data, headers):
     """
-    Core dynamic router that intercepts base44 entity CRUD and auth endpoints 
+    Core dynamic router that intercepts base44 entity CRUD and auth endpoints
     and handles them in MongoDB collections.
     """
     # Normalize path (remove leading /api if present)
@@ -245,47 +325,55 @@ def handle_db_request(method, path, query_params, body_data, headers):
     if normalized == "/admin/students/university" and method == "PUT":
         return set_student_university(headers, body_data)
 
+    # University portal: /api/portal/...
+    if path.startswith("/api/portal/"):
+        if db is None:
+            return UNAVAILABLE
+        import _portal
+        return _portal.handle(db, method, normalized[len("/portal"):], query_params, body_data, get_authorized_user(headers))
+
     if db is None:
         return None  # Database not initialized; fallback to static file mocks
 
     # --- 1. AUTHENTICATION ENDPOINTS ---
-    
+
     # POST /apps/<appId>/auth/register
     match = re.match(r"^/apps/([^/]+)/auth/register$", normalized)
     if match and method == "POST":
         app_id = match.group(1)
         try:
             user_data = json.loads(body_data) if body_data else {}
-            email = user_data.get("email")
+            email = normalize_email(user_data.get("email"))
             if not email:
                 return {"status": 400, "body": {"error": "Email is required"}}
-                
+            password = user_data.get("password")
+            if not isinstance(password, str) or len(password) < 6:
+                return {"status": 400, "body": {"error": "Password must be at least 6 characters"}}
+
             # Check if user already exists
             existing_user = db["User"].find_one({"email": email})
             if existing_user:
                 return {"status": 400, "body": {"error": "User already exists"}}
-                
+
             user_id = str(uuid.uuid4())
             token = uuid.uuid4().hex
-            
+
             new_user = {
                 "id": user_id,
                 "email": email,
-                "password": user_data.get("password", ""),  # In production, hash this
+                "password_hash": hash_password(password),
                 "name": user_data.get("name", "Student"),
-                "role": "user",  # never trust a client-supplied role
+                "role": "super_admin" if email == SUPER_ADMIN_EMAIL else "user",  # never trust a client-supplied role
                 "token": token,
                 "verified": False,
                 "created_at": time.time(),
                 "app_id": app_id
             }
             db["User"].insert_one(new_user)
-            user_response = serialize_doc(new_user)
-            # Remove password before returning
-            user_response.pop("password", None)
-            
+            user_response = public_user(serialize_doc(new_user))
+
             return {
-                "status": 200, 
+                "status": 200,
                 "body": {
                     "access_token": token,
                     "user": user_response
@@ -299,23 +387,27 @@ def handle_db_request(method, path, query_params, body_data, headers):
     if match and method == "POST":
         try:
             login_data = json.loads(body_data) if body_data else {}
-            email = login_data.get("email")
+            email = normalize_email(login_data.get("email"))
             password = login_data.get("password")
-            
-            user = db["User"].find_one({"email": email})
-            if not user or user.get("password") != password:
+
+            user = db["User"].find_one({"email": email}) if email else None
+            if not user or not check_password(user, password) or user.get("status") == "inactive":
                 return {"status": 401, "body": {"error": "Invalid email or password"}}
-                
+            if not user.get("password_hash"):
+                # Upgrade a legacy plain-text password on first successful login
+                db["User"].update_one({"_id": user["_id"]}, {"$set": {"password_hash": hash_password(password)}, "$unset": {"password": ""}})
+            apply_bootstrap_role(user)
+
             # If user has no token, generate one
             token = user.get("token")
             if not token:
                 token = uuid.uuid4().hex
                 db["User"].update_one({"_id": user["_id"]}, {"$set": {"token": token}})
                 user["token"] = token
-                
-            user_response = serialize_doc(user)
-            user_response.pop("password", None)
-            
+
+            user_response = public_user(serialize_doc(user))
+
+
             return {
                 "status": 200,
                 "body": {
@@ -331,8 +423,8 @@ def handle_db_request(method, path, query_params, body_data, headers):
     if match and method == "POST":
         try:
             otp_data = json.loads(body_data) if body_data else {}
-            email = otp_data.get("email")
-            user = db["User"].find_one({"email": email})
+            email = normalize_email(otp_data.get("email"))
+            user = db["User"].find_one({"email": email}) if email else None
             if not user:
                 return {"status": 404, "body": {"error": "User not found"}}
 
@@ -347,10 +439,10 @@ def handle_db_request(method, path, query_params, body_data, headers):
                 token = uuid.uuid4().hex
                 db["User"].update_one({"_id": user["_id"]}, {"$set": {"token": token}})
                 user["token"] = token
-                
-            user_response = serialize_doc(user)
-            user_response.pop("password", None)
-            
+
+            user_response = public_user(serialize_doc(user))
+
+
             return {
                 "status": 200,
                 "body": {
@@ -396,9 +488,9 @@ def handle_db_request(method, path, query_params, body_data, headers):
         app_id = match.group(1)
         entity = match.group(2)
         item_id = match.group(3)
-        
+
         collection = db[entity]
-        
+
         # SPECIAL CASE: GET /entities/User/me
         if entity == "User" and item_id == "me":
             if method == "GET":
@@ -420,12 +512,10 @@ def handle_db_request(method, path, query_params, body_data, headers):
                 try:
                     update_data = json.loads(body_data) if body_data else {}
                     # Avoid updating the immutable fields
-                    update_data.pop("_id", None)
-                    update_data.pop("id", None)
-                    update_data.pop("email", None)
-                    update_data.pop("token", None)
-                    update_data.pop("role", None)  # users must not promote themselves
-                    update_data.pop("verified", None)
+                    if not isinstance(update_data, dict):
+                        return {"status": 400, "body": {"error": "Invalid profile data"}}
+                    for field in PROTECTED_USER_FIELDS:  # users must not promote themselves or change identity
+                        update_data.pop(field, None)
 
                     db["User"].update_one({"id": user["id"]}, {"$set": update_data})
                     updated_user = db["User"].find_one({"id": user["id"]})
@@ -439,13 +529,21 @@ def handle_db_request(method, path, query_params, body_data, headers):
         if not admin:
             if method == "GET" and entity in ADMIN_ONLY_READ:
                 return {"status": 403, "body": {"error": "Admin access required"}}
-            if entity in ADMIN_ONLY_WRITE:
+            if method != "GET" and entity in ADMIN_ONLY_WRITE:
                 return {"status": 403, "body": {"error": "Admin access required"}}
             if method == "GET" and entity == "Enrollment" and not requester:
                 return {"status": 401, "body": {"error": "Authentication required"}}
             # Bulk delete / update-many can wipe whole collections
             if (method == "DELETE" and (not item_id or item_id in ("bulk", "update-many"))) or method == "PATCH":
                 return {"status": 403, "body": {"error": "Admin access required"}}
+            if method == "PUT" and item_id in (None, "bulk", "update-many"):
+                return {"status": 403, "body": {"error": "Admin access required"}}
+            if method != "GET" and not requester and not (method == "POST" and entity in ANONYMOUS_CREATE_OK):
+                return {"status": 401, "body": {"error": "Authentication required"}}
+            if method in ("PUT", "DELETE") and entity == "Enrollment" and item_id and item_id not in ("bulk", "update-many"):
+                existing = collection.find_one({"id": item_id})
+                if existing and existing.get("student_id") != requester.get("id") and existing.get("student_email") != requester.get("email"):
+                    return {"status": 403, "body": {"error": "You can only change your own enrollments"}}
         # Students only ever see their own enrollments
         own_enrollments = None
         if entity == "Enrollment" and not admin and requester:
@@ -495,7 +593,7 @@ def handle_db_request(method, path, query_params, body_data, headers):
                     sort_list.append((sort_field, direction))
                 else:
                     sort_list.append(("created_date", -1)) # Default sort
-                    
+
                 # Setup pagination
                 limit_val = 0
                 limit_param = query_params.get("limit")
@@ -504,7 +602,7 @@ def handle_db_request(method, path, query_params, body_data, headers):
                         limit_val = int(limit_param[0])
                     except ValueError:
                         pass
-                        
+
                 skip_val = 0
                 skip_param = query_params.get("skip")
                 if skip_param:
@@ -512,7 +610,7 @@ def handle_db_request(method, path, query_params, body_data, headers):
                         skip_val = int(skip_param[0])
                     except ValueError:
                         pass
-                        
+
                 cursor = collection.find(filter_dict)
                 if sort_list:
                     # Ignore sorting if default field is missing in first query schema
@@ -524,12 +622,12 @@ def handle_db_request(method, path, query_params, body_data, headers):
                     cursor = cursor.skip(skip_val)
                 if limit_val:
                     cursor = cursor.limit(limit_val)
-                    
+
                 results = serialize_doc(list(cursor))
                 if entity == "User":
                     results = [public_user(u) for u in results]
                 return {"status": 200, "body": results}
-                
+
         # B. POST requests (Create / Bulk Create)
         elif method == "POST":
             # Bulk insertion
@@ -551,7 +649,7 @@ def handle_db_request(method, path, query_params, body_data, headers):
                     return {"status": 200, "body": inserted_docs}
                 except Exception as e:
                     return {"status": 500, "body": {"error": str(e)}}
-            
+
             # Single insertion
             else:
                 try:
@@ -564,7 +662,7 @@ def handle_db_request(method, path, query_params, body_data, headers):
                     return {"status": 200, "body": serialize_doc(doc)}
                 except Exception as e:
                     return {"status": 500, "body": {"error": str(e)}}
-                    
+
         # C. PUT requests (Update / Bulk Update)
         elif method == "PUT":
             # Bulk update
@@ -584,7 +682,7 @@ def handle_db_request(method, path, query_params, body_data, headers):
                     return {"status": 200, "body": updated_docs}
                 except Exception as e:
                     return {"status": 500, "body": {"error": str(e)}}
-                    
+
             # Single update
             elif item_id:
                 try:
@@ -598,7 +696,7 @@ def handle_db_request(method, path, query_params, body_data, headers):
                     return {"status": 200, "body": serialize_doc(updated)}
                 except Exception as e:
                     return {"status": 500, "body": {"error": str(e)}}
-                    
+
         # D. DELETE requests (Delete Single / Delete Many)
         elif method == "DELETE":
             # Delete single item
@@ -607,7 +705,7 @@ def handle_db_request(method, path, query_params, body_data, headers):
                 if res.deleted_count == 0:
                     collection.delete_one({"_id": item_id})
                 return {"status": 200, "body": {"ok": True}}
-                
+
             # Delete multiple matching filter (body data has ids or query filter)
             else:
                 try:
@@ -622,7 +720,7 @@ def handle_db_request(method, path, query_params, body_data, headers):
                     return {"status": 200, "body": {"ok": True}}
                 except Exception as e:
                     return {"status": 500, "body": {"error": str(e)}}
-                    
+
         # E. PATCH requests (Update Many)
         elif method == "PATCH":
             if item_id == "update-many":
@@ -632,7 +730,7 @@ def handle_db_request(method, path, query_params, body_data, headers):
                     update_val = patch_data.get("data", {})
                     update_val.pop("_id", None)
                     update_val.pop("id", None)
-                    
+
                     collection.update_many(filter_q, {"$set": update_val})
                     return {"status": 200, "body": {"ok": True}}
                 except Exception as e:
