@@ -24905,6 +24905,7 @@ function Kn() {
                         children: "Home"
                     }), n.map(r => m.jsx(Ie, {
                         to: zl(r.to),
+                        onClick: r.to === "/universities-programs" ? zptScrollToUniversities : void 0,
                         className: "text-sm text-muted-foreground hover:text-foreground transition-colors",
                         children: r.label
                     }, r.to))]
@@ -24967,7 +24968,9 @@ function Kn() {
                     }), n.map(r => m.jsx(Ie, {
                         to: zl(r.to),
                         className: "block text-sm text-muted-foreground hover:text-foreground py-2",
-                        onClick: () => t(!1),
+                        onClick: () => {
+                            t(!1), r.to === "/universities-programs" && zptScrollToUniversities()
+                        },
                         children: r.label
                     }, r.to)), zu ? m.jsxs(m.Fragment, {
                         children: [zptIsAdmin(zu) ? m.jsx(Ie, {
@@ -26081,7 +26084,22 @@ function ir() {
     })
 }
 
+function zptScrollToUniversities() {
+    // The section renders with the landing page; wait a frame for layout, then scroll below the fixed header
+    setTimeout(() => {
+        const e = document.getElementById("universities-programs");
+        e && window.scrollTo({
+            top: e.getBoundingClientRect().top + window.scrollY - 80,
+            behavior: "smooth"
+        })
+    }, 150)
+}
+
 function Koe() {
+    const zp = window.location.pathname;
+    P.useEffect(() => {
+        zp === "/universities-programs" && zptScrollToUniversities()
+    }, [zp]);
     return m.jsxs("div", {
         className: "min-h-screen bg-background",
         children: [m.jsx(Kn, {}), m.jsx(Roe, {}), m.jsx(Moe, {}), m.jsx(zoe, {}), m.jsx(Voe, {}), m.jsx(XoeCertifications, {}), m.jsx(Hoe, {}), m.jsx(ir, {})]
