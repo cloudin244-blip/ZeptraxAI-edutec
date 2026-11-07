@@ -26305,15 +26305,17 @@ function oae() {
                 email: n,
                 otpCode: l
             });
-            ve.auth.setToken(A), window.location.href = "/"
+            ve.auth.setToken(A && A.access_token || A), window.location.href = "/"
         } catch (A) {
             g(A.message || "Invalid verification code")
         }
         d(!1)
     }, y = async () => {
         try {
-            await ve.auth.resendOtp(n)
-        } catch {}
+            await ve.auth.resendOtp(n), g("A new code is on its way. Check your inbox and spam folder.")
+        } catch (A) {
+            g(A.message || "Couldn't send a new code. Please try again.")
+        }
     }, b = () => {
         ve.auth.loginWithProvider("google", "/dashboard")
     }, w = () => {

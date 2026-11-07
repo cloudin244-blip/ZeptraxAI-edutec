@@ -7,6 +7,9 @@ import hmac
 import hashlib
 import secrets
 import urllib.parse
+import smtplib
+import ssl
+from email.message import EmailMessage
 
 from pathlib import Path
 
@@ -99,12 +102,18 @@ ANONYMOUS_CREATE_OK = {"AuditLog"}
 
 # User fields that only the backend sets
 PROTECTED_USER_FIELDS = ("_id", "id", "email", "token", "role", "verified", "password", "password_hash",
-                         "university_id", "department", "batch", "invitation_id")
+                         "university_id", "department", "batch", "invitation_id",
+                         "otp_hash", "otp_expires_at", "otp_attempts", "otp_sent_at")
 
 PBKDF2_ITERATIONS = 200_000
 
-# No OTP email is sent yet, so verify-otp only signs in brand-new accounts within this window
+# Without email settings no code can be sent, so verify-otp only signs in brand-new accounts within this window
 OTP_WINDOW_SECONDS = 30 * 60
+
+# Emailed verification codes (used once SMTP_HOST, SMTP_USER and SMTP_PASSWORD are set)
+OTP_TTL_SECONDS = 10 * 60
+OTP_MAX_ATTEMPTS = 5
+OTP_RESEND_SECONDS = 60
 
 UNAVAILABLE = {"status": 503, "body": {"error": "Student records are temporarily unavailable. Please try again later."}}
 
@@ -117,6 +126,8 @@ def public_user(user):
     user.pop("password", None)
     user.pop("password_hash", None)
     user.pop("token", None)
+    for field in ("otp_hash", "otp_expires_at", "otp_attempts", "otp_sent_at"):
+        user.pop(field, None)
     return user
 
 
@@ -153,6 +164,66 @@ def check_password(user, password):
             return False
     legacy = user.get("password")
     return isinstance(legacy, str) and legacy != "" and hmac.compare_digest(legacy.encode(), password.encode())
+
+
+def email_configured():
+    return all(os.environ.get(k) for k in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"))
+
+
+def send_email(to, subject, text, html=None):
+    """Send through any SMTP provider (Gmail app password, Resend, SES, ...) configured by environment variables"""
+    host = os.environ["SMTP_HOST"]
+    port = int(os.environ.get("SMTP_PORT") or 587)
+    user = os.environ["SMTP_USER"]
+    msg = EmailMessage()
+    msg["From"] = os.environ.get("MAIL_FROM") or f"ZeptraAI Edutech <{user}>"
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.set_content(text)
+    if html:
+        msg.add_alternative(html, subtype="html")
+    try:
+        import certifi
+        context = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        context = ssl.create_default_context()
+    if port == 465:
+        server = smtplib.SMTP_SSL(host, port, context=context, timeout=15)
+    else:
+        server = smtplib.SMTP(host, port, timeout=15)
+        server.starttls(context=context)
+    with server:
+        server.login(user, os.environ["SMTP_PASSWORD"])
+        server.send_message(msg)
+
+
+def otp_digest(user, code):
+    return hashlib.sha256(f"{user['id']}:{code}".encode("utf-8")).hexdigest()
+
+
+def issue_otp(user):
+    """Email a fresh 6-digit code; only its hash is stored. Returns an error message or None."""
+    code = f"{secrets.randbelow(10 ** 6):06d}"
+    now = time.time()
+    db["User"].update_one({"_id": user["_id"]}, {"$set": {
+        "otp_hash": otp_digest(user, code), "otp_expires_at": now + OTP_TTL_SECONDS,
+        "otp_attempts": 0, "otp_sent_at": now,
+    }})
+    minutes = OTP_TTL_SECONDS // 60
+    text = (f"Your ZeptraAI verification code is {code}\n\n"
+            f"It expires in {minutes} minutes. If you didn't create a ZeptraAI account, you can ignore this email.")
+    html = (f'<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;color:#0f172a">'
+            f'<h2 style="margin:0 0 8px">Verify your email</h2>'
+            f'<p style="margin:0 0 16px;color:#475569">Enter this code on ZeptraAI Edutech to finish creating your account:</p>'
+            f'<p style="font-size:32px;font-weight:bold;letter-spacing:8px;margin:0 0 16px">{code}</p>'
+            f'<p style="margin:0;color:#64748b;font-size:13px">It expires in {minutes} minutes. '
+            f"If you didn't create a ZeptraAI account, you can ignore this email.</p></div>")
+    try:
+        send_email(user["email"], f"{code} is your ZeptraAI verification code", text, html)
+        return None
+    except Exception as e:
+        print(f"[email] sending verification code to {user['email']} failed: {e}")
+        return "We couldn't send the verification email. Please try again in a minute."
 
 
 def apply_bootstrap_role(user):
@@ -307,7 +378,7 @@ def get_authorized_user(headers):
         return None
     return serialize_doc(user)
 
-def handle_db_request(method, path, query_params, body_data, headers):
+def _handle_db_request(method, path, query_params, body_data, headers):
     """
     Core dynamic router that intercepts base44 entity CRUD and auth endpoints
     and handles them in MongoDB collections.
@@ -370,6 +441,8 @@ def handle_db_request(method, path, query_params, body_data, headers):
                 "app_id": app_id
             }
             db["User"].insert_one(new_user)
+            if email_configured():
+                issue_otp(new_user)  # a failed send can be retried with "Resend code"
             user_response = public_user(serialize_doc(new_user))
 
             return {
@@ -428,11 +501,27 @@ def handle_db_request(method, path, query_params, body_data, headers):
             if not user:
                 return {"status": 404, "body": {"error": "User not found"}}
 
-            # No OTP is emailed yet, so this must not hand out tokens for existing accounts
-            if user.get("verified") is not False or time.time() - user.get("created_at", 0) > OTP_WINDOW_SECONDS:
+            if user.get("verified") is not False:
+                message = "This email is already verified. Please log in with your email and password."
+                return {"status": 401, "body": {"error": message, "message": message}}
+            if email_configured():
+                code = re.sub(r"\s+", "", str(otp_data.get("otp_code") or ""))
+                if not user.get("otp_hash") or time.time() > user.get("otp_expires_at", 0):
+                    message = "This code has expired. Tap Resend code to get a new one."
+                    return {"status": 400, "body": {"error": message, "message": message}}
+                if user.get("otp_attempts", 0) >= OTP_MAX_ATTEMPTS:
+                    message = "Too many wrong codes. Tap Resend code to get a new one."
+                    return {"status": 429, "body": {"error": message, "message": message}}
+                if not hmac.compare_digest(otp_digest(user, code), user["otp_hash"]):
+                    db["User"].update_one({"_id": user["_id"]}, {"$inc": {"otp_attempts": 1}})
+                    message = "That code isn't right. Check the latest email from ZeptraAI and try again."
+                    return {"status": 400, "body": {"error": message, "message": message}}
+            elif time.time() - user.get("created_at", 0) > OTP_WINDOW_SECONDS:
+                # No email service: brand-new accounts only, so this can't be used to take over existing ones
                 message = "Verification expired. Please log in with your email and password."
                 return {"status": 401, "body": {"error": message, "message": message}}
-            db["User"].update_one({"_id": user["_id"]}, {"$set": {"verified": True}})
+            db["User"].update_one({"_id": user["_id"]}, {"$set": {"verified": True},
+                                                         "$unset": {"otp_hash": "", "otp_expires_at": "", "otp_attempts": "", "otp_sent_at": ""}})
 
             token = user.get("token")
             if not token:
@@ -452,6 +541,26 @@ def handle_db_request(method, path, query_params, body_data, headers):
             }
         except Exception as e:
             return {"status": 500, "body": {"error": str(e)}}
+
+    # POST /apps/<appId>/auth/resend-otp
+    match = re.match(r"^/apps/([^/]+)/auth/resend-otp$", normalized)
+    if match and method == "POST":
+        data = json.loads(body_data) if body_data else {}
+        email = normalize_email(data.get("email") if isinstance(data, dict) else None)
+        user = db["User"].find_one({"email": email}) if email else None
+        if not email_configured():
+            message = "Email verification isn't available yet. Enter any 6 digits within 30 minutes of signing up, or log in with your password."
+            return {"status": 503, "body": {"error": message, "message": message}}
+        # Same reply whether or not the account exists, so this can't be used to discover emails
+        if user and user.get("verified") is False:
+            wait = OTP_RESEND_SECONDS - (time.time() - user.get("otp_sent_at", 0))
+            if wait > 0:
+                message = f"Please wait {int(wait) + 1} seconds before asking for another code."
+                return {"status": 429, "body": {"error": message, "message": message}}
+            problem = issue_otp(user)
+            if problem:
+                return {"status": 502, "body": {"error": problem, "message": problem}}
+        return {"status": 200, "body": {"ok": True}}
 
     # --- 2. LOG & ANALYTICS ENDPOINTS ---
 
@@ -737,3 +846,11 @@ def handle_db_request(method, path, query_params, body_data, headers):
                     return {"status": 500, "body": {"error": str(e)}}
 
     return None  # Path did not match any database endpoints
+
+
+def handle_db_request(method, path, query_params, body_data, headers):
+    response = _handle_db_request(method, path, query_params, body_data, headers)
+    body = response.get("body") if response else None
+    if response and response.get("status", 200) >= 400 and isinstance(body, dict) and body.get("error") and not body.get("message"):
+        body["message"] = body["error"]  # the main site's SDK displays `message`
+    return response
