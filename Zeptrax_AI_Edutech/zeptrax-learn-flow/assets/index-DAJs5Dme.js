@@ -24799,8 +24799,29 @@ function Poe({
     })
 }
 
+function zptLogout() {
+    try {
+        localStorage.removeItem("base44_access_token"), localStorage.removeItem("token")
+    } catch {}
+    window.location.href = "/"
+}
+
+function zptIsAdmin(e) {
+    return !!e && (e.email === Loe || e.role === "admin" || e.role === "super_admin")
+}
+
+function zptAfterLogin(e) {
+    let t = null;
+    try {
+        t = new URLSearchParams(window.location.search).get("from_url")
+    } catch {}
+    return t && /^\/(?!\/)/.test(t) ? t : zptIsAdmin(e) ? "/dashboard" : "/"
+}
+
 function Kn() {
-    const [e, t] = P.useState(!1), n = [{
+    const [e, t] = P.useState(!1), {
+        user: zu
+    } = lae(), zl = r => zu ? r.replace(/^\/login\?from_url=/, "") : r, n = [{
         label: "AI Programs",
         to: "/programs"
     }, {
@@ -24841,7 +24862,7 @@ function Kn() {
                         className: "text-sm text-muted-foreground hover:text-foreground transition-colors",
                         children: "Home"
                     }), n.map(r => m.jsx(Ie, {
-                        to: r.to,
+                        to: zl(r.to),
                         className: "text-sm text-muted-foreground hover:text-foreground transition-colors",
                         children: r.label
                     }, r.to))]
@@ -24849,7 +24870,22 @@ function Kn() {
                     className: "hidden lg:flex items-center gap-3",
                     children: [m.jsx(Poe, {
                         compact: !0
-                    }), m.jsx(Ie, {
+                    }), zu ? m.jsxs(m.Fragment, {
+                        children: [zptIsAdmin(zu) ? m.jsx(Ie, {
+                            to: "/dashboard",
+                            className: "px-5 py-2 text-sm font-medium rounded-full border border-border/60 text-foreground hover:bg-secondary transition-colors",
+                            children: "Dashboard"
+                        }) : zu.university_id ? m.jsx("a", {
+                            href: "/portal/",
+                            className: "px-5 py-2 text-sm font-medium rounded-full border border-border/60 text-foreground hover:bg-secondary transition-colors",
+                            children: "My Portal"
+                        }) : null, m.jsx("button", {
+                            onClick: zptLogout,
+                            title: zu.email,
+                            className: "px-5 py-2 text-sm font-medium rounded-full border border-border/60 text-foreground hover:bg-secondary transition-colors",
+                            children: "Log Out"
+                        })]
+                    }) : m.jsx(Ie, {
                         to: "/login",
                         className: "px-5 py-2 text-sm font-medium rounded-full border border-border/60 text-foreground hover:bg-secondary transition-colors",
                         children: "Sign In"
@@ -24887,11 +24923,26 @@ function Kn() {
                         onClick: () => t(!1),
                         children: "Home"
                     }), n.map(r => m.jsx(Ie, {
-                        to: r.to,
+                        to: zl(r.to),
                         className: "block text-sm text-muted-foreground hover:text-foreground py-2",
                         onClick: () => t(!1),
                         children: r.label
-                    }, r.to)), m.jsx(Ie, {
+                    }, r.to)), zu ? m.jsxs(m.Fragment, {
+                        children: [zptIsAdmin(zu) ? m.jsx(Ie, {
+                            to: "/dashboard",
+                            className: "block w-full text-center px-5 py-2.5 text-sm font-medium rounded-full border border-border text-foreground hover:bg-secondary transition-colors mt-3",
+                            onClick: () => t(!1),
+                            children: "Dashboard"
+                        }) : zu.university_id ? m.jsx("a", {
+                            href: "/portal/",
+                            className: "block w-full text-center px-5 py-2.5 text-sm font-medium rounded-full border border-border text-foreground hover:bg-secondary transition-colors mt-3",
+                            children: "My Portal"
+                        }) : null, m.jsx("button", {
+                            onClick: zptLogout,
+                            className: "block w-full text-center px-5 py-2.5 text-sm font-medium rounded-full border border-border text-foreground hover:bg-secondary transition-colors mt-3",
+                            children: "Log Out"
+                        })]
+                    }) : m.jsx(Ie, {
                         to: "/login",
                         className: "block w-full text-center px-5 py-2.5 text-sm font-medium rounded-full border border-border text-foreground hover:bg-secondary transition-colors mt-3",
                         onClick: () => t(!1),
@@ -26159,7 +26210,8 @@ function iae() {
     const [e, t] = P.useState(""), [n, r] = P.useState(""), [i, o] = P.useState(!1), [a, s] = P.useState(""), l = async f => {
         f.preventDefault(), s(""), o(!0);
         try {
-            await ve.auth.loginViaEmailPassword(e, n), window.location.href = "/"
+            const zr = await ve.auth.loginViaEmailPassword(e, n);
+            window.location.href = zptAfterLogin(zr && zr.user)
         } catch (d) {
             s(d.message || "Invalid credentials")
         }
@@ -26684,7 +26736,7 @@ function lae() {
         async function a() {
             try {
                 const s = await ve.auth.me();
-                t(s), s.email === Loe ? r("super_admin") : s.role === "admin" ? r("admin") : r("user")
+                t(s), s.email === Loe || s.role === "super_admin" ? r("super_admin") : s.role === "admin" ? r("admin") : r("user")
             } catch {
                 r(null)
             }
@@ -26780,7 +26832,7 @@ function fae({
     setCollapsed: r,
     isSuperAdmin: i
 }) {
-    const o = () => ve.auth.logout("/");
+    const o = () => zptLogout();
     return m.jsxs("aside", {
         className: `fixed left-0 top-0 bottom-0 z-40 flex flex-col bg-card border-r border-border/50 transition-all duration-300 ${n?"w-16":"w-56"}`,
         children: [m.jsx("div", {
