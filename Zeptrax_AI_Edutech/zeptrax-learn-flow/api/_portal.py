@@ -96,6 +96,28 @@ def pending_filter(now):
     return {"used_at": None, "revoked": {"$ne": True}, "expires_at": {"$gt": now}}
 
 
+# ---------------------------------------------------------------- programs (website catalog)
+
+def program_titles(db):
+    """slug -> title for every catalog program, including hidden ones (for display)"""
+    return {p["slug"]: p["title"] for p in db["CatalogProgram"].find({}, {"slug": 1, "title": 1})}
+
+
+def choosable_programs(db):
+    return {p["slug"] for p in db["CatalogProgram"].find({"visible": True}, {"slug": 1})}
+
+
+def check_program(db, slug, required):
+    """Returns (clean slug or "", error message or None)"""
+    slug = slug.strip() if isinstance(slug, str) else ""
+    choices = choosable_programs(db)
+    if not slug:
+        return "", ("Choose your Masters program" if required and choices else None)
+    if slug not in choices:
+        return "", "Choose a program from the list"
+    return slug, None
+
+
 # ---------------------------------------------------------------- me / profile
 
 def get_me(db, user):
@@ -103,6 +125,8 @@ def get_me(db, user):
     me.pop("_id", None)
     me["university"] = university_summary(db, user.get("university_id"))
     me["profile_completion"] = profile_completion(user)
+    slug = user.get("program_slug")
+    me["program"] = {"slug": slug, "title": program_titles(db).get(slug, slug)} if slug else None
     me["portal_role"] = "staff" if is_staff(user) else user.get("role") or "user"
     return ok({"user": me})
 
@@ -121,6 +145,11 @@ def update_profile(db, user, body):
     for field in ("github", "linkedin"):
         if updates.get(field) and not updates[field].startswith(("https://", "http://")):
             return error(400, f"{field.title()} must be a full link starting with https://")
+    if "program_slug" in data and user.get("role") == STUDENT:
+        slug, problem = check_program(db, data["program_slug"], required=True)
+        if problem:
+            return error(400, problem)
+        updates["program_slug"] = slug
     if "full_name" in updates:
         if not updates["full_name"]:
             return error(400, "Full name is required")
@@ -185,6 +214,11 @@ def register(db, body):
     problem = invitation_problem(db, inv)
     if problem:
         return error(400, problem)
+    program_slug = ""
+    if inv["role"] == STUDENT:
+        program_slug, problem = check_program(db, data.get("program_slug"), required=True)
+        if problem:
+            return error(400, problem)
     if db["User"].find_one({"email": email}):
         return error(409, "An account with this email already exists. Log in instead.")
 
@@ -209,6 +243,7 @@ def register(db, body):
         "department": claimed.get("department", ""),
         "batch": claimed.get("batch", ""),
         "invitation_id": claimed["id"],
+        "program_slug": program_slug,
         "token": uuid.uuid4().hex,
         "verified": True,
         "status": "active",
@@ -427,11 +462,12 @@ def list_students(db, user, query_params):
     filt = {"role": STUDENT}
     if university_id:
         filt["university_id"] = university_id
-    for field in ("department", "batch"):
+    for field in ("department", "batch", "program_slug"):
         value = query(query_params, field)
         if value:
             filt[field] = value
     names = {u["id"]: u["name"] for u in db["University"].find({}, {"id": 1, "name": 1})}
+    titles = program_titles(db)
     students = []
     for s in db["User"].find(filt).sort("created_at", -1).limit(5000):
         students.append({
@@ -441,8 +477,52 @@ def list_students(db, user, query_params):
             "registration_number": s.get("registration_number", ""), "graduation_year": s.get("graduation_year", ""),
             "phone": s.get("phone", ""), "status": s.get("status", "active"),
             "profile_completion": profile_completion(s), "created_at": s.get("created_at"),
+            "program_slug": s.get("program_slug", ""), "program_title": titles.get(s.get("program_slug"), s.get("program_slug", "")),
         })
     return ok({"students": students})
+
+
+def programs_overview(db, user):
+    """Staff: every catalog program with its students grouped by university, plus students without a program"""
+    if not is_staff(user):
+        return error(403, "Only Zeptrax staff can see all programs")
+    universities = {u["id"]: u["name"] for u in db["University"].find({}, {"id": 1, "name": 1})}
+    required = db["Assessment"].find_one({"status": "published", "required": True}, sort=[("created_at", 1)])
+    scores = {}
+    if required:
+        total = db["AssessmentQuestion"].count_documents({"assessment_id": required["id"]}) * required.get("marks_per_question", 1)
+        for a in db["AssessmentAttempt"].find({"assessment_id": required["id"]}):
+            scores[a["user_id"]] = {"status": a["status"], "score": a.get("score"), "total": total}
+
+    groups = {}
+    for s in db["User"].find({"role": STUDENT}).sort("created_at", 1):
+        uni = s.get("university_id")
+        groups.setdefault(s.get("program_slug") or "", {}).setdefault(uni, []).append({
+            "id": s["id"], "full_name": s.get("full_name") or s.get("name") or "", "email": s.get("email", ""),
+            "department": s.get("department", ""), "batch": s.get("batch", ""), "created_at": s.get("created_at"),
+            "profile_completion": profile_completion(s), "test": scores.get(s["id"]),
+        })
+
+    def by_university(slug):
+        unis = groups.pop(slug, {})
+        rows = [{"id": uid, "name": universities.get(uid, "No university"), "students": students} for uid, students in unis.items()]
+        return sorted(rows, key=lambda r: (-len(r["students"]), r["name"].lower()))
+
+    programs = []
+    for p in db["CatalogProgram"].find({}).sort("order", 1):
+        unis = by_university(p["slug"])
+        programs.append({"slug": p["slug"], "title": p["title"], "category": p.get("category", ""), "visible": p.get("visible", True),
+                         "student_count": sum(len(u["students"]) for u in unis), "universities": unis})
+    unassigned = by_university("")
+    for slug in list(groups):  # students whose program was deleted from the catalog
+        unis = by_university(slug)
+        programs.append({"slug": slug, "title": f"{slug} (no longer in the catalog)", "category": "", "visible": False,
+                         "student_count": sum(len(u["students"]) for u in unis), "universities": unis})
+    return ok({
+        "programs": programs,
+        "unassigned": {"student_count": sum(len(u["students"]) for u in unassigned), "universities": unassigned},
+        "total_students": db["User"].count_documents({"role": STUDENT}),
+    })
 
 
 def overview(db, user):
@@ -517,6 +597,8 @@ def handle(db, method, path, query_params, body_data, user):
     match = re.fullmatch(r"/campaigns/([\w-]+)/revoke", path)
     if match and method == "POST":
         return revoke_campaign(db, user, match.group(1))
+    if path == "/programs" and method == "GET":
+        return programs_overview(db, user)
     if path == "/students" and method == "GET":
         return list_students(db, user, query_params)
     return error(404, "Not found")

@@ -25,8 +25,16 @@ export default function StudentHome() {
     <>
       <PageHeader
         title={`Welcome, ${(user.full_name || user.name || "").split(" ")[0] || "student"}`}
-        description={[user.university?.name, user.department, user.batch].filter(Boolean).join(" · ")}
+        description={[user.program?.title, user.university?.name, user.department, user.batch].filter(Boolean).join(" · ")}
       />
+      {!user.program && (
+        <Card className="mb-6 border-primary/40 p-5 text-sm">
+          You haven't chosen your Masters program yet.{" "}
+          <Link to="/profile" className="font-medium text-primary hover:underline">
+            Choose it on your profile →
+          </Link>
+        </Card>
+      )}
       <RequiredTestBanner tests={tests?.assessments} />
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="p-5 lg:col-span-2">

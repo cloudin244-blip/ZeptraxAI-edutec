@@ -2,12 +2,14 @@ import { useState } from "react";
 import { portal } from "../api.js";
 import { useAuth } from "../auth.jsx";
 import { Button, Card, ErrorText, Field, Notice, PageHeader } from "../components/ui.jsx";
+import ProgramSelect, { usePrograms } from "../components/ProgramSelect.jsx";
 
 const FIELDS = ["full_name", "phone", "registration_number", "graduation_year", "skills", "github", "linkedin"];
 
 export default function Profile() {
   const { user, setUser } = useAuth();
-  const [form, setForm] = useState(() => Object.fromEntries(FIELDS.map((f) => [f, user[f] || ""])));
+  const [form, setForm] = useState(() => ({ ...Object.fromEntries(FIELDS.map((f) => [f, user[f] || ""])), program_slug: user.program?.slug || "" }));
+  const programs = usePrograms();
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -48,6 +50,13 @@ export default function Profile() {
             <Field label="Department · Batch">
               <input className="input opacity-60" value={[user.department, user.batch].filter(Boolean).join(" · ") || "–"} disabled />
             </Field>
+            {user.role === "student" && programs?.length > 0 && (
+              <div className="sm:col-span-2">
+                <Field label="Masters program">
+                  <ProgramSelect programs={programs} value={form.program_slug} onChange={(v) => setForm({ ...form, program_slug: v })} required />
+                </Field>
+              </div>
+            )}
             <Field label="Registration number">
               <input className="input" value={form.registration_number} onChange={set("registration_number")} placeholder="MU-CSE-2023-042" />
             </Field>

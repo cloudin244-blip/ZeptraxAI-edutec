@@ -10,17 +10,20 @@ export default function Students() {
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("");
   const [batch, setBatch] = useState("");
+  const [program, setProgram] = useState("");
   const [universities] = useLoad(() => (staff ? portal.get("/universities") : Promise.resolve(null)), [staff]);
   const [data, error] = useLoad(() => portal.get(`/students${query({ university_id: universityId })}`), [universityId]);
 
   const students = data?.students || [];
   const departments = useMemo(() => [...new Set(students.map((s) => s.department).filter(Boolean))].sort(), [students]);
   const batches = useMemo(() => [...new Set(students.map((s) => s.batch).filter(Boolean))].sort(), [students]);
+  const programs = useMemo(() => [...new Map(students.filter((s) => s.program_slug).map((s) => [s.program_slug, s.program_title])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [students]);
   const q = search.trim().toLowerCase();
   const rows = students.filter(
     (s) =>
       (!department || s.department === department) &&
       (!batch || s.batch === batch) &&
+      (!program || (program === "none" ? !s.program_slug : s.program_slug === program)) &&
       (!q || [s.full_name, s.email, s.registration_number].some((v) => (v || "").toLowerCase().includes(q)))
   );
 
@@ -36,6 +39,7 @@ export default function Students() {
       ),
     },
     ...(staff ? [{ key: "university_name", label: "University" }] : []),
+    { key: "program_title", label: "Program", render: (s) => s.program_title || <span className="text-amber-300">Not chosen</span> },
     { key: "department", label: "Department" },
     { key: "batch", label: "Batch" },
     { key: "registration_number", label: "Reg. no." },
@@ -50,7 +54,7 @@ export default function Students() {
   return (
     <>
       <PageHeader title="Students" description={`${rows.length} of ${students.length} students`} />
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <input className="input" placeholder="Search name, email or reg. no." value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search students" />
         {staff && (
           <select className="input" value={universityId} onChange={(e) => setUniversityId(e.target.value)} aria-label="University">
@@ -62,6 +66,15 @@ export default function Students() {
             ))}
           </select>
         )}
+        <select className="input" value={program} onChange={(e) => setProgram(e.target.value)} aria-label="Program">
+          <option value="">All programs</option>
+          {programs.map(([slug, title]) => (
+            <option key={slug} value={slug}>
+              {title}
+            </option>
+          ))}
+          <option value="none">Program not chosen</option>
+        </select>
         <select className="input" value={department} onChange={(e) => setDepartment(e.target.value)} aria-label="Department">
           <option value="">All departments</option>
           {departments.map((d) => (

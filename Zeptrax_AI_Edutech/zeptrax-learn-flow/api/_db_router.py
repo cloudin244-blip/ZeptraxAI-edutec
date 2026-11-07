@@ -111,7 +111,8 @@ ANONYMOUS_CREATE_OK = {"AuditLog"}
 # User fields that only the backend sets
 PROTECTED_USER_FIELDS = ("_id", "id", "email", "token", "role", "verified", "password", "password_hash",
                          "university_id", "department", "batch", "invitation_id",
-                         "otp_hash", "otp_expires_at", "otp_attempts", "otp_sent_at")
+                         "otp_hash", "otp_expires_at", "otp_attempts", "otp_sent_at",
+                         "program_slug")  # set through the portal, which checks it against the catalog
 
 PBKDF2_ITERATIONS = 200_000
 

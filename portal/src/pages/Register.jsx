@@ -4,6 +4,7 @@ import { portal } from "../api.js";
 import { useAuth } from "../auth.jsx";
 import { Button, ErrorText, Field, Loading, Notice } from "../components/ui.jsx";
 import { AuthLayout } from "./Login.jsx";
+import ProgramSelect, { usePrograms } from "../components/ProgramSelect.jsx";
 
 export default function Register() {
   const [params] = useSearchParams();
@@ -11,7 +12,8 @@ export default function Register() {
   const { signIn, signOut, user } = useAuth();
   const navigate = useNavigate();
   const [invite, setInvite] = useState(null);
-  const [form, setForm] = useState({ full_name: "", email: "", password: "", confirm: "" });
+  const [form, setForm] = useState({ full_name: "", email: "", password: "", confirm: "", program_slug: "" });
+  const programs = usePrograms();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -47,7 +49,7 @@ export default function Register() {
     setBusy(true);
     setError("");
     try {
-      const { access_token } = await portal.post("/register", { token, full_name: form.full_name, email: form.email, password: form.password });
+      const { access_token } = await portal.post("/register", { token, full_name: form.full_name, email: form.email, password: form.password, program_slug: form.program_slug });
       await signIn(access_token);
       navigate(isAdmin ? "/overview" : "/tests", { replace: true }); // students start with their required test
     } catch (err) {
@@ -83,6 +85,11 @@ export default function Register() {
         <Field label="Email">
           <input className="input" type="email" required autoComplete="email" value={form.email} onChange={set("email")} />
         </Field>
+        {!isAdmin && programs?.length > 0 && (
+          <Field label="Masters program" hint="The program you're enrolling in. You can change it later on your profile.">
+            <ProgramSelect programs={programs} value={form.program_slug} onChange={(v) => setForm({ ...form, program_slug: v })} required />
+          </Field>
+        )}
         <Field label="Password" hint="At least 8 characters">
           <input className="input" type="password" required minLength={8} autoComplete="new-password" value={form.password} onChange={set("password")} />
         </Field>

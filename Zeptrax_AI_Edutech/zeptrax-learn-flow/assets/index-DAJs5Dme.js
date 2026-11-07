@@ -26807,7 +26807,8 @@ const uae = {
         Mail: mc,
         ShieldCheck: Iy,
         Trophy: rg,
-        GraduationCap: Ry
+        GraduationCap: Ry,
+        Layers: DK
     },
     cae = [{
         id: "dashboard",
@@ -26821,6 +26822,10 @@ const uae = {
         id: "students",
         label: "Students",
         icon: "GraduationCap"
+    }, {
+        id: "programs",
+        label: "Programs",
+        icon: "Layers"
     }, {
         id: "modules",
         label: "Modules",
@@ -58621,7 +58626,8 @@ const AOe = {
     "verify-cert": wOe,
     "admin-mgmt": SOe,
     leaderboard: _Oe,
-        students: ZptAdminStudentsTab
+        students: ZptAdminStudentsTab,
+        programs: ZptAdminProgramsTab
 };
 
 function EOe() {
@@ -60163,6 +60169,255 @@ function ZptUniversityList({
                 className: "text-primary hover:underline",
                 children: "Hire From Us"
             }), "."]
+        })]
+    })
+}
+
+function ZptProgramStudents({
+    universities: e
+}) {
+    return m.jsx("div", {
+        className: "space-y-4 pt-3",
+        children: e.map(t => m.jsxs("div", {
+            children: [m.jsxs("div", {
+                className: "flex items-center gap-2 mb-2",
+                children: [m.jsx(VW, {
+                    className: "w-4 h-4 text-cyan-400"
+                }), m.jsx("p", {
+                    className: "text-sm font-semibold",
+                    children: t.name
+                }), m.jsxs("span", {
+                    className: "text-xs text-muted-foreground",
+                    children: [t.students.length, t.students.length === 1 ? " student" : " students"]
+                })]
+            }), m.jsx("div", {
+                className: "overflow-x-auto rounded-lg border border-border/50",
+                children: m.jsxs("table", {
+                    className: "w-full text-sm",
+                    children: [m.jsx("thead", {
+                        className: "text-xs text-muted-foreground border-b border-border/50",
+                        children: m.jsxs("tr", {
+                            children: [m.jsx("th", {
+                                className: "text-left font-medium px-3 py-2",
+                                children: "Student"
+                            }), m.jsx("th", {
+                                className: "text-left font-medium px-3 py-2",
+                                children: "Department"
+                            }), m.jsx("th", {
+                                className: "text-left font-medium px-3 py-2",
+                                children: "Batch"
+                            }), m.jsx("th", {
+                                className: "text-left font-medium px-3 py-2",
+                                children: "Profile"
+                            }), m.jsx("th", {
+                                className: "text-left font-medium px-3 py-2",
+                                children: "Test"
+                            })]
+                        })
+                    }), m.jsx("tbody", {
+                        children: t.students.map(n => m.jsxs("tr", {
+                            className: "border-b border-border/30 last:border-0",
+                            children: [m.jsxs("td", {
+                                className: "px-3 py-2",
+                                children: [m.jsx("p", {
+                                    className: "font-medium",
+                                    children: n.full_name || "–"
+                                }), m.jsx("p", {
+                                    className: "text-xs text-muted-foreground",
+                                    children: n.email
+                                })]
+                            }), m.jsx("td", {
+                                className: "px-3 py-2",
+                                children: n.department || "–"
+                            }), m.jsx("td", {
+                                className: "px-3 py-2",
+                                children: n.batch || "–"
+                            }), m.jsxs("td", {
+                                className: "px-3 py-2",
+                                children: [n.profile_completion, "%"]
+                            }), m.jsx("td", {
+                                className: "px-3 py-2",
+                                children: n.test ? n.test.status === "submitted" ? `${n.test.score} / ${n.test.total}` : "In progress" : m.jsx("span", {
+                                    className: "text-muted-foreground",
+                                    children: "Not started"
+                                })
+                            })]
+                        }, n.id))
+                    })]
+                })
+            })]
+        }, t.id || t.name))
+    })
+}
+
+function ZptProgramRow({
+    title: e,
+    subtitle: t,
+    count: n,
+    universities: r,
+    hidden: i,
+    open: o,
+    onToggle: a
+}) {
+    return m.jsxs("div", {
+        className: "rounded-xl bg-card border border-border/50",
+        children: [m.jsxs("button", {
+            type: "button",
+            onClick: a,
+            disabled: !n,
+            "aria-expanded": o,
+            className: "w-full flex items-center gap-3 px-4 py-3 text-left",
+            children: [m.jsx(o ? vh : nB, {
+                className: `w-4 h-4 shrink-0 ${n ? "text-muted-foreground" : "text-transparent"}`
+            }), m.jsxs("div", {
+                className: "min-w-0 flex-1",
+                children: [m.jsx("p", {
+                    className: "font-medium truncate",
+                    children: e
+                }), m.jsx("p", {
+                    className: "text-xs text-muted-foreground",
+                    children: t
+                })]
+            }), i && m.jsx("span", {
+                className: "text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground",
+                children: "Hidden on website"
+            }), m.jsxs("span", {
+                className: `text-sm font-semibold shrink-0 ${n ? "text-cyan-400" : "text-muted-foreground"}`,
+                children: [n, n === 1 ? " student" : " students"]
+            }), n > 0 && m.jsxs("span", {
+                className: "text-xs text-muted-foreground shrink-0",
+                children: ["· ", r.length, r.length === 1 ? " university" : " universities"]
+            })]
+        }), o && n > 0 && m.jsx("div", {
+            className: "px-4 pb-4 border-t border-border/50",
+            children: m.jsx(ZptProgramStudents, {
+                universities: r
+            })
+        })]
+    })
+}
+
+function ZptAdminProgramsTab() {
+    const [e, t] = P.useState(null),
+        [n, r] = P.useState(""),
+        [i, o] = P.useState(""),
+        [a, s] = P.useState({}),
+        [l, u] = P.useState(!1);
+    P.useEffect(() => {
+        let x = !0;
+        return fetch("/api/portal/programs", {
+            headers: zptAuthHeaders()
+        }).then(async v => {
+            const y = await v.json().catch(() => ({}));
+            if (!v.ok || !Array.isArray(y.programs)) throw new Error(y.error || "Could not load programs.");
+            x && t(y)
+        }).catch(v => {
+            x && r(v.message || "Could not load programs.")
+        }), () => {
+            x = !1
+        }
+    }, []);
+    if (n) return m.jsx("p", {
+        className: "text-sm text-red-400",
+        children: n
+    });
+    if (e === null) return m.jsx("div", {
+        className: "flex justify-center py-8",
+        children: m.jsx(kn, {
+            className: "w-6 h-6 animate-spin text-muted-foreground"
+        })
+    });
+    const f = i.trim().toLowerCase(),
+        d = x => !f || x.universities.some(v => v.name.toLowerCase().includes(f) || v.students.some(y => [y.full_name, y.email, y.department, y.batch].some(b => (b || "").toLowerCase().includes(f)))),
+        c = x => ({ ...x,
+            universities: f ? x.universities.map(v => v.name.toLowerCase().includes(f) ? v : { ...v,
+                students: v.students.filter(y => [y.full_name, y.email, y.department, y.batch].some(b => (b || "").toLowerCase().includes(f)))
+            }).filter(v => v.students.length) : x.universities
+        }),
+        p = e.programs.filter(x => !f || x.title.toLowerCase().includes(f) || (x.category || "").toLowerCase().includes(f) || d(x)).map(x => x.title.toLowerCase().includes(f) || (x.category || "").toLowerCase().includes(f) ? x : c(x)).map(x => ({ ...x,
+            student_count: x.universities.reduce((v, y) => v + y.students.length, 0)
+        })).filter(x => l || x.student_count > 0 || f),
+        g = e.programs.filter(x => x.student_count > 0).length,
+        h = c(e.unassigned),
+        w = h.universities.reduce((x, v) => x + v.students.length, 0);
+    return m.jsxs("div", {
+        className: "space-y-6",
+        children: [m.jsxs("div", {
+            children: [m.jsxs("h1", {
+                className: "text-2xl font-bold font-heading flex items-center gap-2",
+                children: [m.jsx(DK, {
+                    className: "w-6 h-6 text-cyan-400"
+                }), "Programs"]
+            }), m.jsx("p", {
+                className: "text-sm text-muted-foreground mt-1",
+                children: "The Masters programs shown on the website, with the students enrolled in each, grouped by university. Students choose their program when they register on the University Portal."
+            })]
+        }), m.jsxs("div", {
+            className: "grid grid-cols-2 sm:grid-cols-4 gap-3",
+            children: [["Programs", e.programs.length], ["With students", g], ["Students", e.total_students], ["No program chosen", e.unassigned.student_count]].map(([x, v]) => m.jsxs("div", {
+                className: "rounded-xl bg-card border border-border/50 p-4",
+                children: [m.jsx("p", {
+                    className: "text-2xl font-bold",
+                    children: v
+                }), m.jsx("p", {
+                    className: "text-xs text-muted-foreground",
+                    children: x
+                })]
+            }, x))
+        }), m.jsxs("div", {
+            className: "flex flex-wrap items-center gap-3",
+            children: [m.jsxs("div", {
+                className: "relative flex-1",
+                style: {
+                    minWidth: "220px"
+                },
+                children: [m.jsx(dl, {
+                    className: "w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2"
+                }), m.jsx("input", {
+                    type: "text",
+                    value: i,
+                    onChange: x => o(x.target.value),
+                    placeholder: "Search program, university or student",
+                    "aria-label": "Search programs",
+                    className: "w-full bg-background border border-border rounded-lg pl-9 pr-4 py-2 text-sm text-foreground outline-none focus:border-primary"
+                })]
+            }), m.jsxs("label", {
+                className: "flex items-center gap-2 text-sm text-muted-foreground",
+                children: [m.jsx("input", {
+                    type: "checkbox",
+                    checked: l,
+                    onChange: x => u(x.target.checked)
+                }), "Show programs with no students"]
+            }), m.jsx("a", {
+                href: "/portal/#/catalog",
+                className: "text-sm text-cyan-400 hover:underline",
+                children: "Edit programs →"
+            })]
+        }), p.length === 0 && w === 0 ? m.jsx("p", {
+            className: "text-sm text-muted-foreground text-center py-8",
+            children: e.total_students ? "No programs match your search." : "No students have registered yet. Programs with students appear here as soon as students join."
+        }) : m.jsxs("div", {
+            className: "space-y-2",
+            children: [p.map(x => m.jsx(ZptProgramRow, {
+                title: x.title,
+                subtitle: x.category || "No category",
+                count: x.student_count,
+                universities: x.universities,
+                hidden: !x.visible,
+                open: !!a[x.slug] || !!f,
+                onToggle: () => s(v => ({ ...v,
+                    [x.slug]: !v[x.slug]
+                }))
+            }, x.slug)), w > 0 && m.jsx(ZptProgramRow, {
+                title: "No program chosen",
+                subtitle: "Students who haven't picked their Masters program yet",
+                count: w,
+                universities: h.universities,
+                open: !!a.__none || !!f,
+                onToggle: () => s(v => ({ ...v,
+                    __none: !v.__none
+                }))
+            })]
         })]
     })
 }
