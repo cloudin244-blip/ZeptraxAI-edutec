@@ -60302,7 +60302,7 @@ function ZptAdminProgramsTab() {
         [n, r] = P.useState(""),
         [i, o] = P.useState(""),
         [a, s] = P.useState({}),
-        [l, u] = P.useState(!1);
+        [l, u] = P.useState(!0); // all programs listed by default
     P.useEffect(() => {
         let x = !0;
         return fetch("/api/portal/programs", {
