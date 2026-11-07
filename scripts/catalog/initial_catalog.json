@@ -1,0 +1,797 @@
+{
+  "programs": [
+    {
+      "title": "Masters in AI with AWS Cloud Architect",
+      "slug": "masters-in-ai-aws-cloud-architect",
+      "category": "Cloud Architecture",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Google Cloud Architect",
+      "slug": "masters-in-ai-google-cloud-architect",
+      "category": "Cloud Architecture",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Microsoft Azure Cloud Architect",
+      "slug": "masters-in-ai-azure-cloud-architect",
+      "category": "Cloud Architecture",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Oracle Cloud Architect",
+      "slug": "masters-in-ai-oracle-cloud-architect",
+      "category": "Cloud Architecture",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with AWS DevOps Engineer",
+      "slug": "masters-in-ai-aws-devops",
+      "category": "DevOps Engineering",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with GCP DevOps Engineer",
+      "slug": "masters-in-ai-gcp-devops",
+      "category": "DevOps Engineering",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with AZURE DevOps Engineer",
+      "slug": "masters-in-ai-azure-devops",
+      "category": "DevOps Engineering",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with AWS Data Engineer",
+      "slug": "masters-in-ai-aws-data-engineer",
+      "category": "Data Engineering",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with GCP Data Engineer",
+      "slug": "masters-in-ai-gcp-data-engineer",
+      "category": "Data Engineering",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Microsoft Azure and Microsoft Fabric",
+      "slug": "masters-in-ai-azure-fabric",
+      "category": "Data Engineering",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Oracle Data Engineer",
+      "slug": "masters-in-ai-oracle-data-engineer",
+      "category": "Data Engineering",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Data Bricks",
+      "slug": "masters-in-ai-databricks",
+      "category": "Data Engineering",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in Cortex AI with Snowflake",
+      "slug": "masters-in-cortex-ai-snowflake",
+      "category": "Data Engineering",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Snowflake Data Engineer",
+      "slug": "masters-in-ai-snowflake-data-engineer",
+      "category": "Data Engineering",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in Generative AI with machine learning",
+      "slug": "masters-in-generative-ai-machine-learning",
+      "category": "Data Science & BI",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters program in Artificial intelligence",
+      "slug": "masters-program-in-artificial-intelligence",
+      "category": "Data Science & BI",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Data Scientist",
+      "slug": "masters-in-ai-data-scientist",
+      "category": "Data Science & BI",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Business Intelligence",
+      "slug": "masters-in-ai-business-intelligence",
+      "category": "Data Science & BI",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Business Analyst",
+      "slug": "masters-in-ai-business-analyst",
+      "category": "Data Science & BI",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Cybersecurity Security - Blue Team",
+      "slug": "masters-in-ai-cybersecurity-blue-team",
+      "category": "Cybersecurity",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Cybersecurity Security - Red Team",
+      "slug": "masters-in-ai-cybersecurity-red-team",
+      "category": "Cybersecurity",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Cloud Security",
+      "slug": "masters-in-ai-cloud-security",
+      "category": "Cybersecurity",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Project Management",
+      "slug": "masters-in-ai-project-management",
+      "category": "Management & Others",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Product Manager",
+      "slug": "masters-in-ai-product-manager",
+      "category": "Management & Others",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with MLOps Engineer",
+      "slug": "masters-in-ai-mlops",
+      "category": "Management & Others",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Full Stack Developer",
+      "slug": "masters-in-ai-full-stack",
+      "category": "Management & Others",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI within Blockchain Technology",
+      "slug": "masters-in-ai-blockchain",
+      "category": "Management & Others",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI Automation",
+      "slug": "masters-in-ai-automation",
+      "category": "Management & Others",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Quantum Computing",
+      "slug": "masters-in-ai-quantum-computing",
+      "category": "",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Banking and Insurance",
+      "slug": "masters-in-ai-banking-and-insurance",
+      "category": "",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Healthcare",
+      "slug": "masters-in-ai-healthcare",
+      "category": "",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    },
+    {
+      "title": "Masters in AI with Finance and Accounting",
+      "slug": "masters-in-ai-finance-and-accounting",
+      "category": "",
+      "tagline": "AI-focused masters program.",
+      "description": "Comprehensive AI masters program covering advanced concepts, hands-on projects and real-world applications.",
+      "duration": "4 months"
+    }
+  ],
+  "free_courses": [
+    {
+      "title": "Introduction to Artificial Intelligence",
+      "category": "Artificial Intelligence",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Generative AI Fundamentals",
+      "category": "Artificial Intelligence",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Prompt Engineering with ChatGPT, Claude & Gemini",
+      "category": "Artificial Intelligence",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "AI Productivity Tools",
+      "category": "Artificial Intelligence",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "AI Agents Fundamentals",
+      "category": "Artificial Intelligence",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "AI Automation with No-Code Tools",
+      "category": "Artificial Intelligence",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Responsible AI & AI Ethics",
+      "category": "Artificial Intelligence",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Python Programming Basics",
+      "category": "Programming & Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Java Programming Fundamentals",
+      "category": "Programming & Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "SQL Fundamentals",
+      "category": "Programming & Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "HTML, CSS & JavaScript",
+      "category": "Programming & Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "REST API Basics",
+      "category": "Programming & Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Object-Oriented Programming (OOP)",
+      "category": "Programming & Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Git & GitHub",
+      "category": "Programming & Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Advanced Excel",
+      "category": "Data Analytics & BI",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Data Analysis with Excel",
+      "category": "Data Analytics & BI",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "SQL for Data Analysis",
+      "category": "Data Analytics & BI",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Power BI Fundamentals",
+      "category": "Data Analytics & BI",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Tableau Fundamentals",
+      "category": "Data Analytics & BI",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Data Visualization Basics",
+      "category": "Data Analytics & BI",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "AWS Cloud Fundamentals",
+      "category": "Cloud Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Microsoft Azure Fundamentals",
+      "category": "Cloud Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Google Cloud Fundamentals",
+      "category": "Cloud Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Cloud Security Basics",
+      "category": "Cloud Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Docker Fundamentals",
+      "category": "Cloud Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Kubernetes Basics",
+      "category": "Cloud Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Cyber Security Fundamentals",
+      "category": "Cyber Security",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Ethical Hacking Basics",
+      "category": "Cyber Security",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Network Security",
+      "category": "Cyber Security",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Linux Security Basics",
+      "category": "Cyber Security",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "SOC Fundamentals",
+      "category": "Cyber Security",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "SIEM Introduction",
+      "category": "Cyber Security",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "OWASP Top 10",
+      "category": "Cyber Security",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Identity & Access Management (IAM)",
+      "category": "Cyber Security",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Computer Fundamentals",
+      "category": "IT Foundation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Windows & Linux Basics",
+      "category": "IT Foundation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Networking Fundamentals",
+      "category": "IT Foundation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Internet & Email Security",
+      "category": "IT Foundation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "IT Help Desk Fundamentals",
+      "category": "IT Foundation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "MS Office Essentials",
+      "category": "IT Foundation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Resume Building",
+      "category": "Career Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "LinkedIn Profile Optimization",
+      "category": "Career Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Interview Preparation",
+      "category": "Career Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Communication Skills",
+      "category": "Career Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Agile & Scrum Fundamentals",
+      "category": "Career Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Project Management Basics",
+      "category": "Career Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Freelancing & Remote Career Guidance",
+      "category": "Career Development",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Quantum Computing Fundamentals",
+      "category": "Quantum Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Quantum Algorithms",
+      "category": "Quantum Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Quantum Machine Learning",
+      "category": "Quantum Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Quantum Programming with Qiskit",
+      "category": "Quantum Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Quantum Computing Applications in AI",
+      "category": "Quantum Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Future of Quantum Technologies",
+      "category": "Quantum Computing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Social Media Marketing",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Facebook & Instagram Marketing",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "LinkedIn Marketing",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "YouTube Marketing",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "X (Twitter) Marketing",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Content Marketing Strategy",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Personal Branding",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Influencer Marketing",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Google Business Profile Optimization",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Email Marketing",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "SEO Fundamentals",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Google Analytics",
+      "category": "Social Media & Digital Marketing",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Adobe Premiere Pro",
+      "category": "Video Editing & Content Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "DaVinci Resolve",
+      "category": "Video Editing & Content Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "CapCut Professional Editing",
+      "category": "Video Editing & Content Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Filmora Video Editing",
+      "category": "Video Editing & Content Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "YouTube Video Production",
+      "category": "Video Editing & Content Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Short Videos (Reels & Shorts)",
+      "category": "Video Editing & Content Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Motion Graphics Basics",
+      "category": "Video Editing & Content Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Green Screen Editing",
+      "category": "Video Editing & Content Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Audio Editing for Videos",
+      "category": "Video Editing & Content Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Blender 3D Fundamentals",
+      "category": "3D Design, Animation & AI Video Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Autodesk Maya Basics",
+      "category": "3D Design, Animation & AI Video Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "3D Product Animation",
+      "category": "3D Design, Animation & AI Video Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "AI-Based 3D Video Generation",
+      "category": "3D Design, Animation & AI Video Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "3D Character Animation",
+      "category": "3D Design, Animation & AI Video Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Architectural Visualization",
+      "category": "3D Design, Animation & AI Video Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Product Visualization",
+      "category": "3D Design, Animation & AI Video Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "3D Motion Graphics",
+      "category": "3D Design, Animation & AI Video Creation",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Canva Professional",
+      "category": "Graphic Design",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Adobe Photoshop",
+      "category": "Graphic Design",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Adobe Illustrator",
+      "category": "Graphic Design",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Adobe Express",
+      "category": "Graphic Design",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Figma UI/UX Basics",
+      "category": "Graphic Design",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Logo & Brand Design",
+      "category": "Graphic Design",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Facebook & Instagram Ads",
+      "category": "Digital Advertising",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Google Ads",
+      "category": "Digital Advertising",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "LinkedIn Ads",
+      "category": "Digital Advertising",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "YouTube Ads",
+      "category": "Digital Advertising",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "AI-Powered Advertisement Creation",
+      "category": "Digital Advertising",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Video Advertisement Production",
+      "category": "Digital Advertising",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Product Commercial Creation",
+      "category": "Digital Advertising",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Social Media Ad Campaign Management",
+      "category": "Digital Advertising",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Blockchain Fundamentals",
+      "category": "Advanced Technologies",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Ethereum & Web3",
+      "category": "Advanced Technologies",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Solidity Programming",
+      "category": "Advanced Technologies",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Smart Contracts Development",
+      "category": "Advanced Technologies",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "AI + Blockchain Integration",
+      "category": "Advanced Technologies",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "IoT Fundamentals",
+      "category": "Advanced Technologies",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Robotic Process Automation (RPA)",
+      "category": "Advanced Technologies",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Internet of Things (IoT)",
+      "category": "Advanced Technologies",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Edge Computing",
+      "category": "Advanced Technologies",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "AR/VR Fundamentals",
+      "category": "Advanced Technologies",
+      "description": "Free certification course from ZeptraAI."
+    },
+    {
+      "title": "Metaverse Development Basics",
+      "category": "Advanced Technologies",
+      "description": "Free certification course from ZeptraAI."
+    }
+  ]
+}

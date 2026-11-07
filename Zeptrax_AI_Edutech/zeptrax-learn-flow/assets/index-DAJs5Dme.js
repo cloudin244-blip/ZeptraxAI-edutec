@@ -24799,6 +24799,48 @@ function Poe({
     })
 }
 
+function zptApplyCatalog(e) {
+    if (!e || typeof e != "object") return !1;
+    const t = JSON.stringify([Ph, v8, FreeCoursesData, $oe]);
+    if (Array.isArray(e.programs)) {
+        const n = e.programs.filter(r => r && r.title && r.slug);
+        Ph.length = 0, v8.length = 0, $oe.length = 0;
+        n.forEach(r => {
+            Ph.push({
+                title: r.title,
+                slug: r.slug
+            }), v8.push({
+                title: r.title,
+                slug: r.slug,
+                tagline: r.tagline || "",
+                description: r.description || "",
+                duration: r.duration || ""
+            });
+            if (r.category) {
+                let i = $oe.find(o => o.title === r.category);
+                i || (i = {
+                    title: r.category,
+                    slugs: []
+                }, $oe.push(i)), i.slugs.push(r.slug)
+            }
+        })
+    }
+    Array.isArray(e.free_courses) && (FreeCoursesData.length = 0, e.free_courses.filter(n => n && n.title).forEach((n, r) => FreeCoursesData.push({
+        id: `free-${r + 1}`,
+        title: n.title,
+        category: n.category || "Other",
+        description: n.description || "Free certification course from ZeptraAI.",
+        level: "beginner",
+        duration: "Self-paced",
+        enrolled: 0,
+        course: {
+            id: `free-${r + 1}`,
+            title: n.title
+        }
+    })));
+    return JSON.stringify([Ph, v8, FreeCoursesData, $oe]) !== t
+}
+
 function zptLogout() {
     try {
         localStorage.removeItem("base44_access_token"), localStorage.removeItem("token")
@@ -26864,6 +26906,15 @@ function fae({
                     className: "w-4 h-4 shrink-0"
                 }), !n && m.jsx("span", {
                     children: "Admin Mgmt"
+                })]
+            }), i && m.jsxs("a", {
+                href: "/portal/#/catalog",
+                className: "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all mt-1 text-muted-foreground hover:text-foreground hover:bg-secondary/50 border border-transparent",
+                title: n ? "Website Catalog" : void 0,
+                children: [m.jsx(yh, {
+                    className: "w-4 h-4 shrink-0"
+                }), !n && m.jsx("span", {
+                    children: "Website Catalog"
                 })]
             })]
         }), m.jsxs("div", {
@@ -77249,4 +77300,24 @@ function A2e() {
         })
     })
 }
-kW.createRoot(document.getElementById("root")).render(m.jsx(A2e, {}));
+(function () {
+    // Website catalog: apply the last copy instantly, then refresh from the server in the background
+    try {
+        zptApplyCatalog(JSON.parse(localStorage.getItem("zpt_catalog") || "null"))
+    } catch {}
+    const e = kW.createRoot(document.getElementById("root"));
+    let t = 0;
+    const n = () => e.render(m.jsx(A2e, {}, t++));
+    n(), fetch("/api/catalog").then(r => r.ok ? r.text() : null).then(r => {
+        if (!r) return;
+        let i = null;
+        try {
+            i = localStorage.getItem("zpt_catalog")
+        } catch {}
+        if (r === i) return;
+        try {
+            localStorage.setItem("zpt_catalog", r)
+        } catch {}
+        zptApplyCatalog(JSON.parse(r)) && n()
+    }).catch(() => {})
+})();

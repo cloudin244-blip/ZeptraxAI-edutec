@@ -44,6 +44,7 @@ export const portal = {
   get: (path) => request("GET", `/api/portal${path}`),
   post: (path, body) => request("POST", `/api/portal${path}`, body ?? {}),
   put: (path, body) => request("PUT", `/api/portal${path}`, body ?? {}),
+  del: (path) => request("DELETE", `/api/portal${path}`),
 };
 
 export const login = (email, password) => request("POST", `/api/apps/${APP_ID}/auth/login`, { email, password });

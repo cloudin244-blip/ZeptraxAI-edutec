@@ -93,13 +93,17 @@ SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "cloudin244@gmail.com").
 # Collections only admins may read through the generic entity endpoints
 ADMIN_ONLY_READ = {"User", "AdminInvitation", "EmailLog", "AuditLog", "StudentProfile",
                    "University", "InvitationCampaign", "Invitation",
-                   "Assessment", "AssessmentQuestion", "AssessmentAttempt"}
+                   "Assessment", "AssessmentQuestion", "AssessmentAttempt",
+                   "CatalogProgram", "CatalogFreeCourse"}
 
 # Collections only admins may change through the generic entity endpoints
 ADMIN_ONLY_WRITE = {"User", "StudentProfile", "University", "InvitationCampaign", "Invitation",
                     "Assessment", "AssessmentQuestion", "AssessmentAttempt",
                     "AdminInvitation", "Certificate", "Course", "CourseModule", "Document",
                     "EmailLog", "Project", "TeamMember", "Review"}
+
+# Website content only the super admin may change (courses, their modules and the website catalog)
+SUPER_ADMIN_ONLY_WRITE = {"Course", "CourseModule", "CatalogProgram", "CatalogFreeCourse"}
 
 # Collections anyone (even logged out) may add to through the generic entity endpoints
 ANONYMOUS_CREATE_OK = {"AuditLog"}
@@ -400,6 +404,11 @@ def _handle_db_request(method, path, query_params, body_data, headers):
     if normalized == "/admin/students/university" and method == "PUT":
         return set_student_university(headers, body_data)
 
+    # Website catalog (programs and free courses), public read
+    if path.rstrip("/") == "/api/catalog" and method == "GET":
+        import _catalog
+        return _catalog.public_catalog(db)
+
     # University portal: /api/portal/...
     if path.startswith("/api/portal/"):
         if db is None:
@@ -639,6 +648,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
         # ACCESS CONTROL
         requester = get_authorized_user(headers)
         admin = is_admin(requester)
+        if method != "GET" and entity in SUPER_ADMIN_ONLY_WRITE and not is_super_admin(requester):
+            return {"status": 403, "body": {"error": "Only the super admin can change courses and the website catalog"}}
         if not admin:
             if method == "GET" and entity in ADMIN_ONLY_READ:
                 return {"status": 403, "body": {"error": "Admin access required"}}

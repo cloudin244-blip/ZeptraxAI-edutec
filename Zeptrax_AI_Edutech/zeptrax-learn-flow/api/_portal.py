@@ -486,6 +486,10 @@ def handle(db, method, path, query_params, body_data, user):
     if path == "/me/profile" and method == "PUT":
         return update_profile(db, user, body_data)
 
+    if path == "/catalog" or path.startswith("/catalog/"):
+        import _catalog
+        return _catalog.handle(db, method, path, body_data, user)
+
     import _assessments
     routed = _assessments.handle(db, method, path, query_params, body_data, user)
     if routed is not None:

@@ -14,6 +14,7 @@ import MyTests from "./pages/MyTests.jsx";
 import TakeTest from "./pages/TakeTest.jsx";
 import TestResults from "./pages/TestResults.jsx";
 import AnswerKey from "./pages/AnswerKey.jsx";
+import Catalog from "./pages/Catalog.jsx";
 
 const NAV = {
   staff: [
@@ -60,7 +61,8 @@ function Shell() {
   const { user, signOut } = useAuth();
   const role = roleOf(user);
   const [menuOpen, setMenuOpen] = useState(false);
-  const nav = NAV[role] || NAV.user;
+  const superAdmin = user.role === "super_admin";
+  const nav = [...(NAV[role] || NAV.user), ...(superAdmin ? [{ to: "/catalog", label: "Website catalog" }] : [])];
   const manager = role === "staff" || role === "university_admin";
 
   return (
@@ -111,6 +113,7 @@ function Shell() {
           {manager && <Route path="/results" element={<TestResults />} />}
           {role === "staff" && <Route path="/universities" element={<Universities />} />}
           {role === "staff" && <Route path="/tests/:id/key" element={<AnswerKey />} />}
+          {superAdmin && <Route path="/catalog" element={<Catalog />} />}
           {role === "student" && <Route path="/tests" element={<MyTests />} />}
           {!manager && <Route path="/home" element={<StudentHome />} />}
           {!manager && <Route path="/profile" element={<Profile />} />}
