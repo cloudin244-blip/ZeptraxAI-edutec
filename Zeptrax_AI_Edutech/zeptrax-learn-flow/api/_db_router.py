@@ -62,6 +62,8 @@ try:
             db["Invitation"].create_index("token_hash", unique=True)
             db["Invitation"].create_index("campaign_id")
             db["User"].create_index("university_id")
+            db["AssessmentAttempt"].create_index([("assessment_id", 1), ("user_id", 1)], unique=True)
+            db["AssessmentQuestion"].create_index("assessment_id")
             print("[MongoDB] Performance indexes built/verified successfully.")
         except Exception as idx_err:
             print(f"[MongoDB] Index creation warning: {idx_err}")
@@ -86,14 +88,16 @@ def serialize_doc(doc):
 
 # Bootstrap only: this account is given the super_admin role in the database when it registers or logs in.
 # Override with the SUPER_ADMIN_EMAIL environment variable.
-SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "mydata193@gmail.com").strip().lower()
+SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "cloudin244@gmail.com").strip().lower()
 
 # Collections only admins may read through the generic entity endpoints
 ADMIN_ONLY_READ = {"User", "AdminInvitation", "EmailLog", "AuditLog", "StudentProfile",
-                   "University", "InvitationCampaign", "Invitation"}
+                   "University", "InvitationCampaign", "Invitation",
+                   "Assessment", "AssessmentQuestion", "AssessmentAttempt"}
 
 # Collections only admins may change through the generic entity endpoints
 ADMIN_ONLY_WRITE = {"User", "StudentProfile", "University", "InvitationCampaign", "Invitation",
+                    "Assessment", "AssessmentQuestion", "AssessmentAttempt",
                     "AdminInvitation", "Certificate", "Course", "CourseModule", "Document",
                     "EmailLog", "Project", "TeamMember", "Review"}
 

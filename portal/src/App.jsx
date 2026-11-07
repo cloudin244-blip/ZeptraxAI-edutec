@@ -10,6 +10,10 @@ import Invitations from "./pages/Invitations.jsx";
 import Students from "./pages/Students.jsx";
 import StudentHome from "./pages/StudentHome.jsx";
 import Profile from "./pages/Profile.jsx";
+import MyTests from "./pages/MyTests.jsx";
+import TakeTest from "./pages/TakeTest.jsx";
+import TestResults from "./pages/TestResults.jsx";
+import AnswerKey from "./pages/AnswerKey.jsx";
 
 const NAV = {
   staff: [
@@ -17,14 +21,17 @@ const NAV = {
     { to: "/universities", label: "Universities" },
     { to: "/invitations", label: "Invitations" },
     { to: "/students", label: "Students" },
+    { to: "/results", label: "Test results" },
   ],
   university_admin: [
     { to: "/overview", label: "Overview" },
     { to: "/students", label: "Students" },
     { to: "/invitations", label: "Bulk invitations" },
+    { to: "/results", label: "Test results" },
   ],
   student: [
     { to: "/home", label: "My dashboard" },
+    { to: "/tests", label: "My tests" },
     { to: "/profile", label: "My profile" },
   ],
   user: [{ to: "/home", label: "Home" }],
@@ -42,6 +49,8 @@ export default function App() {
     <Routes>
       <Route path="/register" element={<Register />} />
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      {/* The exam screen is full-width, without the sidebar */}
+      <Route path="/tests/:id/take" element={user ? <TakeTest /> : <Navigate to="/login" replace />} />
       <Route path="/*" element={user ? <Shell /> : <Navigate to="/login" replace state={{ from: location.pathname }} />} />
     </Routes>
   );
@@ -99,7 +108,10 @@ function Shell() {
           {manager && <Route path="/overview" element={<Overview />} />}
           {manager && <Route path="/students" element={<Students />} />}
           {manager && <Route path="/invitations" element={<Invitations />} />}
+          {manager && <Route path="/results" element={<TestResults />} />}
           {role === "staff" && <Route path="/universities" element={<Universities />} />}
+          {role === "staff" && <Route path="/tests/:id/key" element={<AnswerKey />} />}
+          {role === "student" && <Route path="/tests" element={<MyTests />} />}
           {!manager && <Route path="/home" element={<StudentHome />} />}
           {!manager && <Route path="/profile" element={<Profile />} />}
           <Route path="*" element={<Navigate to={manager ? "/overview" : "/home"} replace />} />

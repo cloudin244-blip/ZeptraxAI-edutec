@@ -5,7 +5,7 @@ import { Badge, Button, Card, ErrorText, Field, formatDate, Loading, Modal, Noti
 
 export const inviteLink = (token) => `${window.location.origin}/portal/#/register?token=${encodeURIComponent(token)}`;
 
-function downloadCsv(filename, rows) {
+export function downloadCsv(filename, rows) {
   const escape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const csv = rows.map((r) => r.map(escape).join(",")).join("\r\n");
   const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));

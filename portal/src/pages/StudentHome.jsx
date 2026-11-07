@@ -1,9 +1,12 @@
 import { Link } from "react-router-dom";
+import { portal } from "../api.js";
 import { roleOf, useAuth } from "../auth.jsx";
-import { Card, PageHeader } from "../components/ui.jsx";
+import { Card, PageHeader, useLoad } from "../components/ui.jsx";
+import { RequiredTestBanner } from "./MyTests.jsx";
 
 export default function StudentHome() {
   const { user } = useAuth();
+  const [tests] = useLoad(() => (roleOf(user) === "student" ? portal.get("/assessments") : Promise.resolve(null)), [user?.id]);
 
   if (roleOf(user) !== "student") {
     return (
@@ -24,6 +27,7 @@ export default function StudentHome() {
         title={`Welcome, ${(user.full_name || user.name || "").split(" ")[0] || "student"}`}
         description={[user.university?.name, user.department, user.batch].filter(Boolean).join(" · ")}
       />
+      <RequiredTestBanner tests={tests?.assessments} />
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="p-5 lg:col-span-2">
           <div className="flex items-center justify-between">
@@ -43,12 +47,25 @@ export default function StudentHome() {
           </Link>
         </Card>
         <Card className="p-5">
-          <h2 className="font-semibold">Coming soon</h2>
-          <ul className="mt-3 space-y-2 text-sm text-muted">
-            <li>Assessments: aptitude, programming and technical tests</li>
-            <li>Final-year projects and submissions</li>
-            <li>Your scores and performance report</li>
-          </ul>
+          <h2 className="font-semibold">Your tests</h2>
+          {tests?.assessments?.length ? (
+            <ul className="mt-3 space-y-2 text-sm">
+              {tests.assessments.map((t) => (
+                <li key={t.id} className="flex justify-between gap-2">
+                  <span className="text-slate-300">{t.title}</span>
+                  <span className="shrink-0 text-muted">
+                    {t.attempt.status === "submitted" ? (t.attempt.score != null ? `${t.attempt.score}/${t.attempt.total_marks}` : "Submitted") : t.attempt.status === "in_progress" ? "In progress" : "Not started"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-muted">No tests assigned yet.</p>
+          )}
+          <Link to="/tests" className="mt-4 inline-block text-sm font-medium text-primary hover:underline">
+            Go to my tests →
+          </Link>
+          <p className="mt-4 text-xs text-muted">Coming soon: final-year projects and your performance report.</p>
         </Card>
       </div>
     </>

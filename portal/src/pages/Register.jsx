@@ -49,7 +49,7 @@ export default function Register() {
     try {
       const { access_token } = await portal.post("/register", { token, full_name: form.full_name, email: form.email, password: form.password });
       await signIn(access_token);
-      navigate(isAdmin ? "/overview" : "/profile", { replace: true });
+      navigate(isAdmin ? "/overview" : "/tests", { replace: true }); // students start with their required test
     } catch (err) {
       setError(err.message);
       setBusy(false);

@@ -9,7 +9,7 @@ export function PageHeader({ title, description, action }) {
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 className="text-2xl font-bold">{title}</h1>
-        {description && <p className="mt-1 text-sm text-muted">{description}</p>}
+        {description && <div className="mt-1 text-sm text-muted">{description}</div>}
       </div>
       {action}
     </div>
