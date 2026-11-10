@@ -64,6 +64,7 @@ try:
             db["User"].create_index("university_id")
             db["AssessmentAttempt"].create_index([("assessment_id", 1), ("user_id", 1)], unique=True)
             db["AssessmentQuestion"].create_index("assessment_id")
+            db["ProjectSubmission"].create_index([("project_id", 1), ("user_id", 1)], unique=True)
             print("[MongoDB] Performance indexes built/verified successfully.")
         except Exception as idx_err:
             print(f"[MongoDB] Index creation warning: {idx_err}")
@@ -94,16 +95,16 @@ SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "cloudin244@gmail.com").
 ADMIN_ONLY_READ = {"User", "AdminInvitation", "EmailLog", "AuditLog", "StudentProfile",
                    "University", "InvitationCampaign", "Invitation",
                    "Assessment", "AssessmentQuestion", "AssessmentAttempt",
-                   "CatalogProgram", "CatalogFreeCourse"}
+                   "CatalogProgram", "CatalogFreeCourse", "PortalProject", "ProjectSubmission"}
 
 # Collections only admins may change through the generic entity endpoints
 ADMIN_ONLY_WRITE = {"User", "StudentProfile", "University", "InvitationCampaign", "Invitation",
-                    "Assessment", "AssessmentQuestion", "AssessmentAttempt",
+                    "Assessment", "AssessmentQuestion", "AssessmentAttempt", "PortalProject", "ProjectSubmission",
                     "AdminInvitation", "Certificate", "Course", "CourseModule", "Document",
                     "EmailLog", "Project", "TeamMember", "Review"}
 
 # Website content only the super admin may change (courses, their modules and the website catalog)
-SUPER_ADMIN_ONLY_WRITE = {"Course", "CourseModule", "CatalogProgram", "CatalogFreeCourse"}
+SUPER_ADMIN_ONLY_WRITE = {"Course", "CourseModule", "CatalogProgram", "CatalogFreeCourse", "Project"}
 
 # Collections anyone (even logged out) may add to through the generic entity endpoints
 ANONYMOUS_CREATE_OK = {"AuditLog"}

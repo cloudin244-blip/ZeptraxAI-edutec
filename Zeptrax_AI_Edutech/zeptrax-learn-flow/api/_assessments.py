@@ -93,6 +93,9 @@ def summary(db, assessment):
         "negative_marks": assessment.get("negative_marks", 0), "required": assessment.get("required", False),
         "question_count": db["AssessmentQuestion"].count_documents({"assessment_id": assessment["id"]}),
         "total_marks": total_marks(db, assessment), "status": assessment.get("status"),
+        "audience": assessment.get("audience", "all_students"), "university_ids": assessment.get("university_ids") or [],
+        "show_score_to_students": assessment.get("show_score_to_students", True),
+        "attempts": db["AssessmentAttempt"].count_documents({"assessment_id": assessment["id"]}),
     }
 
 
@@ -285,14 +288,221 @@ def answer_key(db, user, assessment_id):
         return error(404, "Test not found")
     questions = []
     for q in db["AssessmentQuestion"].find({"assessment_id": assessment_id}).sort("order", 1):
-        questions.append({"number": q["order"], "section": q.get("section", ""), "text": q["text"], "code": q.get("code", ""),
+        questions.append({"id": q["id"], "number": q["order"], "section": q.get("section", ""), "text": q["text"], "code": q.get("code", ""),
                           "options": q["options"], "answer": q["answer"], "review": q.get("review", "")})
     return ok({"assessment": summary(db, assessment), "questions": questions})
+
+
+# ---------------------------------------------------------------- authoring (super admin)
+
+def body_dict(body):
+    try:
+        data = json.loads(body) if body else {}
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def clean(value, limit):
+    return str(value or "").strip()[:limit]
+
+
+def number(value, low, high, label, allow_float=False):
+    try:
+        n = float(value) if allow_float else int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} must be a number")
+    if not low <= n <= high:
+        raise ValueError(f"{label} must be between {low} and {high}")
+    return n
+
+
+def test_settings(db, data, creating):
+    out = {}
+    try:
+        if "title" in data or creating:
+            out["title"] = clean(data.get("title"), 150)
+            if not out["title"]:
+                raise ValueError("Title is required")
+        if "description" in data:
+            out["description"] = clean(data.get("description"), 1000)
+        if "duration_minutes" in data or creating:
+            out["duration_minutes"] = number(data.get("duration_minutes", 60), 1, 600, "Duration (minutes)")
+        if "marks_per_question" in data or creating:
+            out["marks_per_question"] = number(data.get("marks_per_question", 1), 0.5, 100, "Marks per question", True)
+        if "negative_marks" in data or creating:
+            out["negative_marks"] = number(data.get("negative_marks", 0), 0, 100, "Negative marks", True)
+    except ValueError as e:
+        return None, str(e)
+    for flag in ("required", "show_score_to_students"):
+        if flag in data:
+            out[flag] = bool(data[flag])
+    if "audience" in data:
+        if data["audience"] not in ("all_students", "universities"):
+            return None, "Audience must be all students or chosen universities"
+        out["audience"] = data["audience"]
+    if "university_ids" in data:
+        ids = [u for u in (data.get("university_ids") or []) if isinstance(u, str)]
+        known = {u["id"] for u in db["University"].find({"id": {"$in": ids}}, {"id": 1})}
+        out["university_ids"] = [u for u in ids if u in known]
+    if "status" in data:
+        if data["status"] not in ("draft", "published"):
+            return None, "Status must be draft or published"
+        out["status"] = data["status"]
+    return out, None
+
+
+def create_test(db, user, body):
+    data = body_dict(body)
+    if data is None:
+        return error(400, "Invalid data")
+    values, problem = test_settings(db, data, creating=True)
+    if problem:
+        return error(400, problem)
+    doc = {"id": str(uuid.uuid4()), "status": "draft", "required": False, "audience": "all_students", "university_ids": [],
+           "show_score_to_students": True, "description": "", "created_by": user.get("email"), "created_at": time.time(), **values}
+    doc["status"] = "draft"  # new tests start as drafts until they have questions
+    db["Assessment"].insert_one(doc)
+    return ok({"assessment": summary(db, doc)}, 201)
+
+
+def update_test(db, user, assessment_id, body):
+    assessment = db["Assessment"].find_one({"id": assessment_id})
+    if not assessment:
+        return error(404, "Test not found")
+    data = body_dict(body)
+    if data is None:
+        return error(400, "Invalid data")
+    values, problem = test_settings(db, data, creating=False)
+    if problem:
+        return error(400, problem)
+    if values.get("status") == "published" and not db["AssessmentQuestion"].count_documents({"assessment_id": assessment_id}):
+        return error(400, "Add at least one question before publishing")
+    if values.get("audience") == "universities" and not values.get("university_ids", assessment.get("university_ids")):
+        return error(400, "Choose at least one university")
+    started = db["AssessmentAttempt"].count_documents({"assessment_id": assessment_id})
+    if started and any(k in values for k in ("marks_per_question", "negative_marks")):
+        return error(409, "Students have already taken this test, so its marking can't change.")
+    db["Assessment"].update_one({"id": assessment_id}, {"$set": {**values, "updated_by": user.get("email"), "updated_date": time.time()}})
+    return ok({"assessment": summary(db, db["Assessment"].find_one({"id": assessment_id}))})
+
+
+def delete_test(db, assessment_id):
+    if db["AssessmentAttempt"].count_documents({"assessment_id": assessment_id}):
+        return error(409, "Students have taken this test, so it can't be deleted. Unpublish it instead.")
+    if not db["Assessment"].delete_one({"id": assessment_id}).deleted_count:
+        return error(404, "Test not found")
+    db["AssessmentQuestion"].delete_many({"assessment_id": assessment_id})
+    return ok({"deleted": True})
+
+
+def question_values(data):
+    options = data.get("options")
+    if not isinstance(options, list):
+        return None, "Options are required"
+    options = [clean(o, 500) for o in options]
+    if not 2 <= len(options) <= 6 or any(not o for o in options):
+        return None, "Give between 2 and 6 options, none empty"
+    if len(set(options)) != len(options):
+        return None, "Options must all be different"
+    answer = data.get("answer")
+    if not isinstance(answer, int) or not 0 <= answer < len(options):
+        return None, "Mark which option is correct"
+    text = clean(data.get("text"), 2000)
+    if not text:
+        return None, "Question text is required"
+    return {"text": text, "code": str(data.get("code") or "")[:4000].rstrip(), "section": clean(data.get("section"), 60),
+            "options": options, "answer": answer, "review": clean(data.get("review"), 1000)}, None
+
+
+def questions_locked(db, assessment_id):
+    if db["AssessmentAttempt"].count_documents({"assessment_id": assessment_id}):
+        return error(409, "Students have already started this test, so its questions are locked.")
+    return None
+
+
+def save_question(db, assessment_id, body, question_id=None):
+    if not db["Assessment"].find_one({"id": assessment_id}):
+        return error(404, "Test not found")
+    locked = questions_locked(db, assessment_id)
+    if locked:
+        return locked
+    data = body_dict(body)
+    if data is None:
+        return error(400, "Invalid data")
+    values, problem = question_values(data)
+    if problem:
+        return error(400, problem)
+    coll = db["AssessmentQuestion"]
+    if question_id:
+        if not coll.update_one({"id": question_id, "assessment_id": assessment_id}, {"$set": values}).matched_count:
+            return error(404, "Question not found")
+    else:
+        last = list(coll.find({"assessment_id": assessment_id}, {"order": 1}).sort("order", -1).limit(1))
+        question_id = str(uuid.uuid4())
+        coll.insert_one({"id": question_id, "assessment_id": assessment_id, "order": (last[0]["order"] + 1) if last else 1, **values})
+    return answer_key(db, {"role": "super_admin"}, assessment_id)
+
+
+def delete_question(db, assessment_id, question_id):
+    locked = questions_locked(db, assessment_id)
+    if locked:
+        return locked
+    if not db["AssessmentQuestion"].delete_one({"id": question_id, "assessment_id": assessment_id}).deleted_count:
+        return error(404, "Question not found")
+    for i, q in enumerate(db["AssessmentQuestion"].find({"assessment_id": assessment_id}).sort("order", 1), 1):
+        db["AssessmentQuestion"].update_one({"id": q["id"]}, {"$set": {"order": i}})
+    assessment = db["Assessment"].find_one({"id": assessment_id})
+    if assessment and assessment.get("status") == "published" and not db["AssessmentQuestion"].count_documents({"assessment_id": assessment_id}):
+        db["Assessment"].update_one({"id": assessment_id}, {"$set": {"status": "draft"}})
+    return answer_key(db, {"role": "super_admin"}, assessment_id)
+
+
+def reorder_questions(db, assessment_id, body):
+    locked = questions_locked(db, assessment_id)
+    if locked:
+        return locked
+    ids = (body_dict(body) or {}).get("ids")
+    current = [q["id"] for q in db["AssessmentQuestion"].find({"assessment_id": assessment_id}, {"id": 1})]
+    if not isinstance(ids, list) or sorted(ids) != sorted(current):
+        return error(400, "The question list changed. Reload and try again.")
+    for i, qid in enumerate(ids, 1):
+        db["AssessmentQuestion"].update_one({"id": qid}, {"$set": {"order": i}})
+    return answer_key(db, {"role": "super_admin"}, assessment_id)
+
+
+def authoring(db, method, path, body, user):
+    """Super-admin routes: POST /assessments, PUT/DELETE /assessments/{id}, question CRUD and reorder"""
+    if path == "/assessments" and method == "POST":
+        return create_test(db, user, body)
+    match = re.fullmatch(r"/assessments/([\w-]+)", path)
+    if match and method == "PUT":
+        return update_test(db, user, match.group(1), body)
+    if match and method == "DELETE":
+        return delete_test(db, match.group(1))
+    match = re.fullmatch(r"/assessments/([\w-]+)/questions(?:/([\w-]+))?", path)
+    if match:
+        assessment_id, item = match.groups()
+        if item is None and method == "POST":
+            return save_question(db, assessment_id, body)
+        if item == "reorder" and method == "POST":
+            return reorder_questions(db, assessment_id, body)
+        if item and method == "PUT":
+            return save_question(db, assessment_id, body, item)
+        if item and method == "DELETE":
+            return delete_question(db, assessment_id, item)
+    return None
 
 
 # ---------------------------------------------------------------- router (paths below /api/portal)
 
 def handle(db, method, path, query_params, body_data, user):
+    if method != "GET" and (path == "/assessments" or re.fullmatch(r"/assessments/[\w-]+(/questions(/[\w-]+)?)?", path)):
+        if not core.is_super_admin(user):
+            return error(403, "Only the super admin can create or edit tests")
+        routed = authoring(db, method, path, body_data, user)
+        if routed is not None:
+            return routed
     if path == "/assessments" and method == "GET":
         if user.get("role") == "student":
             return list_for_student(db, user)

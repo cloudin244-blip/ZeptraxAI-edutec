@@ -3,10 +3,12 @@ import { portal } from "../api.js";
 import { roleOf, useAuth } from "../auth.jsx";
 import { Card, PageHeader, useLoad } from "../components/ui.jsx";
 import { RequiredTestBanner } from "./MyTests.jsx";
+import { projectStatus } from "./MyProjects.jsx";
 
 export default function StudentHome() {
   const { user } = useAuth();
   const [tests] = useLoad(() => (roleOf(user) === "student" ? portal.get("/assessments") : Promise.resolve(null)), [user?.id]);
+  const [projects] = useLoad(() => (roleOf(user) === "student" ? portal.get("/projects") : Promise.resolve(null)), [user?.id]);
 
   if (roleOf(user) !== "student") {
     return (
@@ -73,7 +75,24 @@ export default function StudentHome() {
           <Link to="/tests" className="mt-4 inline-block text-sm font-medium text-primary hover:underline">
             Go to my tests →
           </Link>
-          <p className="mt-4 text-xs text-muted">Coming soon: final-year projects and your performance report.</p>
+          <h2 className="mt-6 font-semibold">Your projects</h2>
+          {projects?.projects?.length ? (
+            <ul className="mt-3 space-y-2 text-sm">
+              {projects.projects.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-2">
+                  <Link to={`/my-projects/${p.id}`} className="truncate text-slate-300 hover:text-primary">
+                    {p.title}
+                  </Link>
+                  {projectStatus(p)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-muted">No projects assigned yet.</p>
+          )}
+          <Link to="/my-projects" className="mt-4 inline-block text-sm font-medium text-primary hover:underline">
+            Go to my projects →
+          </Link>
         </Card>
       </div>
     </>

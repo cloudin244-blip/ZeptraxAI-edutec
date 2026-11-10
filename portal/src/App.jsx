@@ -15,6 +15,10 @@ import TakeTest from "./pages/TakeTest.jsx";
 import TestResults from "./pages/TestResults.jsx";
 import AnswerKey from "./pages/AnswerKey.jsx";
 import Catalog from "./pages/Catalog.jsx";
+import ManageTests from "./pages/ManageTests.jsx";
+import TestEditor from "./pages/TestEditor.jsx";
+import Projects, { ProjectDetail, ProjectForm } from "./pages/Projects.jsx";
+import MyProjects, { MyProject } from "./pages/MyProjects.jsx";
 
 const NAV = {
   staff: [
@@ -22,17 +26,21 @@ const NAV = {
     { to: "/universities", label: "Universities" },
     { to: "/invitations", label: "Invitations" },
     { to: "/students", label: "Students" },
+    { to: "/manage-tests", label: "Tests" },
     { to: "/results", label: "Test results" },
+    { to: "/projects", label: "Projects" },
   ],
   university_admin: [
     { to: "/overview", label: "Overview" },
     { to: "/students", label: "Students" },
     { to: "/invitations", label: "Bulk invitations" },
     { to: "/results", label: "Test results" },
+    { to: "/projects", label: "Projects" },
   ],
   student: [
     { to: "/home", label: "My dashboard" },
     { to: "/tests", label: "My tests" },
+    { to: "/my-projects", label: "My projects" },
     { to: "/profile", label: "My profile" },
   ],
   user: [{ to: "/home", label: "Home" }],
@@ -111,6 +119,14 @@ function Shell() {
           {manager && <Route path="/students" element={<Students />} />}
           {manager && <Route path="/invitations" element={<Invitations />} />}
           {manager && <Route path="/results" element={<TestResults />} />}
+          {manager && <Route path="/projects" element={<Projects />} />}
+          {manager && <Route path="/projects/:id" element={<ProjectDetail />} />}
+          {superAdmin && <Route path="/projects/new" element={<ProjectForm />} />}
+          {superAdmin && <Route path="/projects/:id/edit" element={<ProjectForm />} />}
+          {role === "staff" && <Route path="/manage-tests" element={<ManageTests />} />}
+          {superAdmin && <Route path="/manage-tests/:id" element={<TestEditor />} />}
+          {role === "student" && <Route path="/my-projects" element={<MyProjects />} />}
+          {role === "student" && <Route path="/my-projects/:id" element={<MyProject />} />}
           {role === "staff" && <Route path="/universities" element={<Universities />} />}
           {role === "staff" && <Route path="/tests/:id/key" element={<AnswerKey />} />}
           {superAdmin && <Route path="/catalog" element={<Catalog />} />}

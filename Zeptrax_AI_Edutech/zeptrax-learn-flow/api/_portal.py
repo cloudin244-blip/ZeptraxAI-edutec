@@ -575,6 +575,12 @@ def handle(db, method, path, query_params, body_data, user):
     if routed is not None:
         return routed
 
+    if path == "/projects" or path.startswith(("/projects/", "/submissions/")):
+        import _projects
+        routed = _projects.handle(db, method, path, body_data, user)
+        if routed is not None:
+            return routed
+
     # Staff and university admins only below
     if not (is_staff(user) or user.get("role") == UNIVERSITY_ADMIN):
         return error(403, "Not allowed")

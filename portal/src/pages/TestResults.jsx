@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { portal, query } from "../api.js";
 import { roleOf, useAuth } from "../auth.jsx";
 import { Badge, Button, Card, ErrorText, formatDate, Loading, PageHeader, Stat, Table, useLoad } from "../components/ui.jsx";
@@ -16,7 +16,8 @@ export default function TestResults() {
   const { user } = useAuth();
   const staff = roleOf(user) === "staff";
   const [tests, testsError] = useLoad(() => portal.get("/assessments"), []);
-  const [testId, setTestId] = useState("");
+  const [params] = useSearchParams();
+  const [testId, setTestId] = useState(params.get("test") || "");
   const [universityId, setUniversityId] = useState("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");

@@ -26845,6 +26845,10 @@ const uae = {
         label: "Programs",
         icon: "Layers"
     }, {
+        id: "assessments",
+        label: "Assessments",
+        icon: "FileText"
+    }, {
         id: "modules",
         label: "Modules",
         icon: "BookOpen"
@@ -58633,7 +58637,7 @@ const AOe = {
     dashboard: Kz,
     records: ESe,
     modules: fOe,
-    projects: dOe,
+    projects: ZptProjectsTab,
     videos: hOe,
     teams: pOe,
     certificates: gOe,
@@ -58645,7 +58649,8 @@ const AOe = {
     "admin-mgmt": SOe,
     leaderboard: _Oe,
         students: ZptAdminStudentsTab,
-        programs: ZptAdminProgramsTab
+        programs: ZptAdminProgramsTab,
+        assessments: ZptAssessmentsTab
 };
 
 function EOe() {
@@ -60312,6 +60317,234 @@ function ZptProgramRow({
                 universities: r
             })
         })]
+    })
+}
+
+function zptUsePortal(e) {
+    const [t, n] = P.useState(null),
+        [r, i] = P.useState("");
+    return P.useEffect(() => {
+        let o = !0;
+        return fetch(e, {
+            headers: zptAuthHeaders()
+        }).then(async a => {
+            const s = await a.json().catch(() => ({}));
+            if (!a.ok) throw new Error(s.error || "Could not load data.");
+            o && n(s)
+        }).catch(a => {
+            o && i(a.message || "Could not load data.")
+        }), () => {
+            o = !1
+        }
+    }, [e]), [t, r]
+}
+
+function zptDate(e) {
+    return e ? new Date(e * 1e3).toLocaleDateString(void 0, {
+        day: "numeric",
+        month: "short",
+        year: "numeric"
+    }) : "No due date"
+}
+
+function ZptPanel({
+    icon: e,
+    title: t,
+    description: n,
+    actions: r,
+    children: i
+}) {
+    return m.jsxs("div", {
+        className: "space-y-6",
+        children: [m.jsxs("div", {
+            className: "flex flex-wrap items-end justify-between gap-3",
+            children: [m.jsxs("div", {
+                children: [m.jsxs("h1", {
+                    className: "text-2xl font-bold font-heading flex items-center gap-2",
+                    children: [m.jsx(e, {
+                        className: "w-6 h-6 text-cyan-400"
+                    }), t]
+                }), m.jsx("p", {
+                    className: "text-sm text-muted-foreground mt-1",
+                    children: n
+                })]
+            }), m.jsx("div", {
+                className: "flex flex-wrap gap-2",
+                children: r
+            })]
+        }), i]
+    })
+}
+
+function ZptLinkButton({
+    href: e,
+    primary: t,
+    children: n
+}) {
+    return m.jsx("a", {
+        href: e,
+        className: `inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${t ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border border-border text-foreground hover:bg-secondary"}`,
+        children: n
+    })
+}
+
+function ZptStatusPill({
+    published: e
+}) {
+    return m.jsx("span", {
+        className: `text-xs px-2 py-0.5 rounded-full ${e ? "bg-green-500/10 text-green-400" : "bg-secondary text-muted-foreground"}`,
+        children: e ? "Published" : "Draft"
+    })
+}
+
+function ZptAssessmentsTab() {
+    const [e, t] = zptUsePortal("/api/portal/assessments");
+    return m.jsx(ZptPanel, {
+        icon: eg,
+        title: "Assessments",
+        description: "Tests students take on the University Portal: questions, timing, who takes them, and results.",
+        actions: [m.jsx(ZptLinkButton, {
+            href: "/portal/#/manage-tests",
+            primary: !0,
+            children: "Create / edit tests"
+        }, "a"), m.jsx(ZptLinkButton, {
+            href: "/portal/#/results",
+            children: "All results"
+        }, "b")],
+        children: t ? m.jsx("p", {
+            className: "text-sm text-red-400",
+            children: t
+        }) : e === null ? m.jsx("div", {
+            className: "flex justify-center py-8",
+            children: m.jsx(kn, {
+                className: "w-6 h-6 animate-spin text-muted-foreground"
+            })
+        }) : e.assessments.length === 0 ? m.jsx("p", {
+            className: "text-sm text-muted-foreground text-center py-8",
+            children: "No tests yet. Use Create / edit tests to add one."
+        }) : m.jsx("div", {
+            className: "space-y-2",
+            children: e.assessments.map(n => m.jsxs("div", {
+                className: "rounded-xl bg-card border border-border/50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3",
+                children: [m.jsxs("div", {
+                    className: "min-w-0 flex-1",
+                    children: [m.jsxs("div", {
+                        className: "flex flex-wrap items-center gap-2",
+                        children: [m.jsx("p", {
+                            className: "font-medium",
+                            children: n.title
+                        }), m.jsx(ZptStatusPill, {
+                            published: n.status === "published"
+                        }), n.required && m.jsx("span", {
+                            className: "text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400",
+                            children: "Required"
+                        })]
+                    }), m.jsxs("p", {
+                        className: "text-xs text-muted-foreground",
+                        children: [n.question_count, " questions · ", n.duration_minutes, " min · ", n.total_marks, " marks · ", n.audience === "universities" ? "chosen universities" : "all students"]
+                    })]
+                }), m.jsxs("div", {
+                    className: "flex gap-6 text-sm shrink-0",
+                    children: [m.jsxs("div", {
+                        children: [m.jsxs("p", {
+                            className: "font-semibold",
+                            children: [n.submitted, " / ", n.assigned]
+                        }), m.jsx("p", {
+                            className: "text-xs text-muted-foreground",
+                            children: "submitted"
+                        })]
+                    }), m.jsxs("div", {
+                        children: [m.jsx("p", {
+                            className: "font-semibold",
+                            children: n.average_score != null ? `${n.average_score} / ${n.total_marks}` : "–"
+                        }), m.jsx("p", {
+                            className: "text-xs text-muted-foreground",
+                            children: "average"
+                        })]
+                    })]
+                }), m.jsxs("div", {
+                    className: "flex gap-2 shrink-0",
+                    children: [m.jsx(ZptLinkButton, {
+                        href: `/portal/#/results?test=${n.id}`,
+                        children: "Results"
+                    }), m.jsx(ZptLinkButton, {
+                        href: `/portal/#/manage-tests/${n.id}`,
+                        children: "Edit"
+                    })]
+                })]
+            }, n.id))
+        })
+    })
+}
+
+function ZptProjectsTab() {
+    const [e, t] = zptUsePortal("/api/portal/projects");
+    return m.jsx(ZptPanel, {
+        icon: sB,
+        title: "Projects",
+        description: "Final-year projects on the University Portal: students submit their work, Zeptrax marks it against the rubric.",
+        actions: [m.jsx(ZptLinkButton, {
+            href: "/portal/#/projects/new",
+            primary: !0,
+            children: "New project"
+        }, "a"), m.jsx(ZptLinkButton, {
+            href: "/portal/#/projects",
+            children: "All projects"
+        }, "b")],
+        children: t ? m.jsx("p", {
+            className: "text-sm text-red-400",
+            children: t
+        }) : e === null ? m.jsx("div", {
+            className: "flex justify-center py-8",
+            children: m.jsx(kn, {
+                className: "w-6 h-6 animate-spin text-muted-foreground"
+            })
+        }) : e.projects.length === 0 ? m.jsx("p", {
+            className: "text-sm text-muted-foreground text-center py-8",
+            children: "No projects yet. Use New project to create one."
+        }) : m.jsx("div", {
+            className: "space-y-2",
+            children: e.projects.map(n => m.jsxs("div", {
+                className: "rounded-xl bg-card border border-border/50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3",
+                children: [m.jsxs("div", {
+                    className: "min-w-0 flex-1",
+                    children: [m.jsxs("div", {
+                        className: "flex flex-wrap items-center gap-2",
+                        children: [m.jsx("p", {
+                            className: "font-medium",
+                            children: n.title
+                        }), m.jsx(ZptStatusPill, {
+                            published: n.status === "published"
+                        })]
+                    }), m.jsxs("p", {
+                        className: "text-xs text-muted-foreground",
+                        children: [n.due_date ? `Due ${zptDate(n.due_date)}` : "No due date", " · ", n.total_marks, " marks · ", n.audience === "all_students" ? "all students" : n.target_names.join(", ")]
+                    })]
+                }), m.jsxs("div", {
+                    className: "flex gap-6 text-sm shrink-0",
+                    children: [m.jsxs("div", {
+                        children: [m.jsxs("p", {
+                            className: "font-semibold",
+                            children: [n.submitted, " / ", n.assigned]
+                        }), m.jsx("p", {
+                            className: "text-xs text-muted-foreground",
+                            children: "submitted"
+                        })]
+                    }), m.jsxs("div", {
+                        children: [m.jsx("p", {
+                            className: "font-semibold",
+                            children: n.evaluated
+                        }), m.jsx("p", {
+                            className: "text-xs text-muted-foreground",
+                            children: "marked"
+                        })]
+                    })]
+                }), m.jsx(ZptLinkButton, {
+                    href: `/portal/#/projects/${n.id}`,
+                    children: "Open"
+                })]
+            }, n.id))
+        })
     })
 }
 
