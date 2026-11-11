@@ -6,6 +6,30 @@
       "destination": "/zeptrax-learn-flow/static-api/apps/public/prod/public-settings/by-id/:id"
     },
     {
+      "source": "/api/status",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/api/apps/auth/login",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/api/apps/auth/:provider/login",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/api/apps/:appId/entities/:entity/me",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/api/apps/:appId/analytics/track/batch",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/api/apps/:appId/integration-endpoints/:path*",
+      "destination": "/api/index"
+    },
+    {
       "source": "/api/((?!index$).*)",
       "destination": "/api/index"
     },
