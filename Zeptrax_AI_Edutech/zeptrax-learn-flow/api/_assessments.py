@@ -220,6 +220,41 @@ def own_attempt(db, user, attempt_id):
     return attempt, None
 
 
+def save_answers(db, user, attempt_id, body):
+    """Many answers in one request ({"answers": {question_id: shown option or null}}): one read, one write.
+    The exam page sends its unsaved choices every few seconds instead of one request per click."""
+    try:
+        data = json.loads(body) if body else {}
+    except ValueError:
+        data = {}
+    answers = data.get("answers") if isinstance(data, dict) else None
+    if not isinstance(answers, dict) or not answers or len(answers) > 500:
+        return error(400, "Invalid answers")
+    if not all(isinstance(q, str) and QUESTION_ID.fullmatch(q) for q in answers):
+        return error(400, "Unknown question")
+    attempt = db["AssessmentAttempt"].find_one(
+        {"id": attempt_id}, {"user_id": 1, "status": 1, "deadline": 1, **{f"option_orders.{q}": 1 for q in answers}})
+    if not attempt or attempt["user_id"] != user["id"]:
+        return error(404, "Attempt not found")
+    if attempt["status"] != "in_progress" or time.time() > attempt["deadline"] + GRACE_SECONDS:
+        expire_if_overdue(db, db["AssessmentAttempt"].find_one({"id": attempt_id}))
+        return error(409, "Time is up — your answers have been submitted.")
+    orders = attempt.get("option_orders") or {}
+    updates = {}
+    for qid, shown in answers.items():
+        perm = orders.get(qid)
+        if perm is None:
+            return error(400, "Unknown question")
+        if shown is None:
+            updates[f"answers.{qid}"] = None
+        elif isinstance(shown, int) and not isinstance(shown, bool) and 0 <= shown < len(perm):
+            updates[f"answers.{qid}"] = perm[shown]
+        else:
+            return error(400, "Unknown option")
+    db["AssessmentAttempt"].update_one({"id": attempt_id, "status": "in_progress"}, {"$set": updates})
+    return ok({"saved": len(updates)})
+
+
 def save_answer(db, user, attempt_id, body):
     try:
         data = json.loads(body) if body else {}
@@ -584,9 +619,11 @@ def handle(db, method, path, query_params, body_data, user):
     routed = _proctoring.handle(db, method, path, body_data, user)
     if routed is not None:
         return routed
-    match = re.fullmatch(r"/attempts/([\w-]+)/(answer|submit)", path)
+    match = re.fullmatch(r"/attempts/([\w-]+)/(answers|answer|submit)", path)
     if match:
         attempt_id, action = match.groups()
+        if action == "answers" and method == "PUT":
+            return save_answers(db, user, attempt_id, body_data)
         if action == "answer" and method == "PUT":
             return save_answer(db, user, attempt_id, body_data)
         if action == "submit" and method == "POST":
