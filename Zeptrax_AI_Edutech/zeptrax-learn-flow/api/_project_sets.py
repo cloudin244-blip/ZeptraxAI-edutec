@@ -18,6 +18,48 @@ import _projects as projects
 STUDENT = "student"
 UNIVERSITY_ADMIN = "university_admin"
 DIFFICULTIES = ("Easy", "Medium", "Hard")
+
+# Branch groups a project can be tagged with. Students type their branch freely at signup, so it is matched
+# to a group by keywords ("Computer Science and Engineering", "CSE", "AI & ML", "BCA" -> CSE).
+BRANCHES = {
+    "CSE": "Computer Science & IT",
+    "ECE": "Electronics & Communication",
+    "EEE": "Electrical",
+    "MECH": "Mechanical",
+    "CIVIL": "Civil",
+}
+BRANCH_PATTERNS = {
+    "CSE": r"comput|\bcse\b|\bit\b|information tech|software|data science|artificial intel|machine learn|\bai\b|\bml\b|\baiml\b|\bai ?& ?ml\b|cyber|\bbca\b|\bmca\b|\bds\b",
+    "ECE": r"electronics|communication|\bece\b|\betc\b|instrumentation|\bvlsi\b|embedded|telecom",
+    "EEE": r"electrical|\beee\b|\bee\b|power system",
+    "MECH": r"mechanical|\bmech\b|automobile|production|mechatronics|manufactur|aeronaut|aerospace",
+    "CIVIL": r"civil|construction|structural|\bce\b",
+}
+
+
+def branch_groups(department):
+    """Branch groups a student's free-text branch belongs to (may be several, or none)"""
+    text = re.sub(r"[^a-z0-9& ]+", " ", (department or "").lower())
+    groups = {code for code, pattern in BRANCH_PATTERNS.items() if re.search(pattern, text)}
+    if "EEE" in groups and "electrical" in text and not re.search(r"communication|\bece\b|instrumentation", text):
+        groups.discard("ECE")  # "Electrical and Electronics Engineering" is an electrical branch
+    return groups
+
+
+def options_for(db, project_set, user):
+    """(the projects a student may choose from, note for the student). With the branch filter on, a student sees
+    projects tagged for their branch plus untagged ones; if their branch isn't recognised or nothing is tagged for
+    it, they see the whole list rather than nothing."""
+    options = list(db["PortalProject"].find({"set_id": project_set["id"], "status": "published"}).sort("order", 1))
+    if not project_set.get("filter_by_branch"):
+        return options, None
+    groups = branch_groups(user.get("department"))
+    if not groups:
+        return options, "Your branch couldn't be matched to a project group, so all projects are shown."
+    matching = [p for p in options if not p.get("branches") or groups & set(p["branches"])]
+    if not any(p.get("branches") for p in matching):
+        return options, "There are no projects specifically for your branch, so all projects are shown."
+    return matching, "Showing projects for your branch: " + ", ".join(BRANCHES[g] for g in sorted(groups)) + "."
 SUBMIT_GRACE_SECONDS = 120  # network slack for a submission sent right at the deadline
 
 
@@ -73,6 +115,7 @@ def visible_to_university(project_set, university_id):
 
 def option_view(p):
     return {"id": p["id"], "title": p["title"], "category": p.get("category", ""), "difficulty": p.get("difficulty", ""),
+            "branches": p.get("branches") or [],
             "description": p.get("description", ""), "requirements": p.get("requirements", ""),
             "rubric": p.get("rubric") or [], "total_marks": projects.total(p)}
 
@@ -81,7 +124,8 @@ def set_view(project_set):
     return {"id": project_set["id"], "title": project_set["title"], "description": project_set.get("description", ""),
             "audience": project_set.get("audience", "all_students"), "targets": project_set.get("targets") or [],
             "time_limit_hours": project_set.get("time_limit_hours"), "due_date": project_set.get("due_date"),
-            "status": project_set.get("status", "draft"), "created_at": project_set.get("created_at")}
+            "status": project_set.get("status", "draft"), "created_at": project_set.get("created_at"),
+            "filter_by_branch": bool(project_set.get("filter_by_branch"))}
 
 
 def for_student(db, user):
@@ -96,7 +140,9 @@ def for_student(db, user):
         if chosen:
             view["chosen"] = {"project_id": chosen["project_id"], "chosen_at": chosen["chosen_at"], "deadline": chosen.get("deadline")}
         else:
-            view["options"] = [option_view(p) for p in db["PortalProject"].find({"set_id": s["id"], "status": "published"}).sort("order", 1)]
+            options, note = options_for(db, s, user)
+            view["options"] = [option_view(p) for p in options]
+            view["branch_note"] = note
         out.append(view)
     return out
 
@@ -112,7 +158,8 @@ def choose(db, user, set_id, body):
     if closed(project_set):
         return error(409, "This project selection has closed.")
     data = projects.body_dict(body) or {}
-    project = db["PortalProject"].find_one({"id": data.get("project_id"), "set_id": set_id, "status": "published"})
+    options, _ = options_for(db, project_set, user)
+    project = next((p for p in options if p["id"] == data.get("project_id")), None)
     if not project:
         return error(400, "Choose a project from the list")
     now = time.time()
@@ -135,6 +182,8 @@ def set_values(db, data, creating):
             return None, "Title is required"
     if "description" in data:
         out["description"] = projects.clean(data.get("description"), 3000)
+    if "filter_by_branch" in data:
+        out["filter_by_branch"] = bool(data["filter_by_branch"])
     if "time_limit_hours" in data:
         raw = data.get("time_limit_hours")
         if raw in (None, "", 0, "0"):

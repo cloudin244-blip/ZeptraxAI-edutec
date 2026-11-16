@@ -6,6 +6,7 @@ import { Badge, Button, Card, ErrorText, Field, formatDate, Loading, Modal, Noti
 import { usePrograms } from "../components/ProgramSelect.jsx";
 import { downloadCsv } from "./Invitations.jsx";
 import { Difficulty, ProjectSetsSection } from "./ProjectSets.jsx";
+import { BRANCHES } from "../data/projectBank.js";
 
 const AUDIENCE = { all_students: "All students", programs: "Programs", universities: "Universities" };
 
@@ -88,7 +89,7 @@ export function ProjectForm() {
   useEffect(() => {
     if (isNew) {
       setForm({ title: "", category: "", description: "", requirements: "", due: "", audience: "all_students", targets: [], rubric: null, status: "draft",
-        difficulty: "", set_id: params.get("set") || null });
+        difficulty: "", branches: [], set_id: params.get("set") || null });
     } else {
       portal
         .get(`/projects/${id}`)
@@ -113,6 +114,7 @@ export function ProjectForm() {
       title: form.title, category: form.category, description: form.description, requirements: form.requirements,
       due_date: inSet ? null : fromDateInput(form.due), audience: inSet ? "all_students" : form.audience, targets: inSet ? [] : form.targets,
       rubric: rubric.map((r) => ({ criterion: r.criterion, max_marks: Number(r.max_marks) })), status, difficulty: form.difficulty || "",
+      ...(inSet ? { branches: form.branches || [] } : {}),
       ...(isNew && inSet ? { set_id: form.set_id } : {}),
     };
     try {
@@ -142,6 +144,26 @@ export function ProjectForm() {
         <Field label="What to submit / requirements">
           <textarea className="input" rows={4} maxLength={4000} value={form.requirements} onChange={(e) => set("requirements", e.target.value)} placeholder="GitHub repository, architecture diagram, demo video…" />
         </Field>
+        {inSet && (
+          <div>
+            <p className="label">For branches</p>
+            <div className="flex flex-wrap gap-4 text-sm">
+              {Object.entries(BRANCHES).map(([code, name]) => (
+                <label key={code} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={(form.branches || []).includes(code)}
+                    onChange={() =>
+                      set("branches", (form.branches || []).includes(code) ? form.branches.filter((b) => b !== code) : [...(form.branches || []), code])
+                    }
+                  />{" "}
+                  {name}
+                </label>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-muted">Leave all unticked to offer it to every branch. Used when the selection filters by branch.</p>
+          </div>
+        )}
         {inSet && (
           <Field label="Difficulty">
             <select className="input max-w-xs" value={form.difficulty || ""} onChange={(e) => set("difficulty", e.target.value)}>

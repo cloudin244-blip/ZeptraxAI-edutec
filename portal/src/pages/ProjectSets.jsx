@@ -4,13 +4,24 @@ import { portal } from "../api.js";
 import { useAuth } from "../auth.jsx";
 import { Badge, Button, Card, ErrorText, Field, formatDate, Loading, Modal, Notice, PageHeader, Table, useLoad } from "../components/ui.jsx";
 import { usePrograms } from "../components/ProgramSelect.jsx";
-import { BANK_TIME_LIMIT_HOURS, PROJECT_BANK } from "../data/projectBank.js";
+import { BANK_TIME_LIMIT_HOURS, BRANCHES, PROJECT_BANK } from "../data/projectBank.js";
 import { fromDateInput, toDateInput } from "./Projects.jsx";
 
 const DIFFICULTY_TONE = { Easy: "green", Medium: "amber", Hard: "red" };
 
 export function Difficulty({ level }) {
   return level ? <Badge tone={DIFFICULTY_TONE[level] || "neutral"}>{level}</Badge> : null;
+}
+
+export function BranchTags({ branches }) {
+  if (!branches?.length) return <span className="text-xs text-muted">All branches</span>;
+  return (
+    <span className="flex flex-wrap gap-1">
+      {branches.map((b) => (
+        <Badge key={b}>{BRANCHES[b] || b}</Badge>
+      ))}
+    </span>
+  );
 }
 
 export const hoursText = (h) => (h ? `${h % 1 ? h : Math.round(h)} hour${h === 1 ? "" : "s"}` : "");
@@ -124,7 +135,7 @@ function SetForm({ existing, onClose, onSaved }) {
   const [form, setForm] = useState(() =>
     existing
       ? { ...existing, time_limit_hours: existing.time_limit_hours ?? "", due: toDateInput(existing.due_date) }
-      : { title: "", description: "", audience: "universities", targets: [], time_limit_hours: BANK_TIME_LIMIT_HOURS, due: "" }
+      : { title: "", description: "", audience: "universities", targets: [], time_limit_hours: BANK_TIME_LIMIT_HOURS, due: "", filter_by_branch: true }
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -138,6 +149,7 @@ function SetForm({ existing, onClose, onSaved }) {
     const body = {
       title: form.title, description: form.description, audience: form.audience, targets: form.targets,
       time_limit_hours: form.time_limit_hours === "" ? null : Number(form.time_limit_hours), due_date: fromDateInput(form.due),
+      filter_by_branch: !!form.filter_by_branch,
     };
     try {
       if (existing) {
@@ -178,6 +190,16 @@ function SetForm({ existing, onClose, onSaved }) {
             ))}
           </div>
         )}
+        <div>
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={!!form.filter_by_branch} onChange={(e) => set("filter_by_branch", e.target.checked)} /> Show each student only the
+            projects for their branch
+          </label>
+          <p className="mt-1 text-xs text-muted">
+            Uses the branch students entered at signup and the branch tags on each project. Projects without tags are shown to everyone; a student whose
+            branch isn't recognised sees the whole list.
+          </p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Time to finish (hours)" hint="Counted from when each student chooses. Empty = no limit.">
             <input className="input" type="number" min={0.5} step={0.5} value={form.time_limit_hours} onChange={(e) => set("time_limit_hours", e.target.value)} />
@@ -249,6 +271,7 @@ export function ProjectSetDetail() {
       ),
     },
     { key: "difficulty", label: "Difficulty", render: (p) => <Difficulty level={p.difficulty} /> },
+    ...(s.filter_by_branch ? [{ key: "branches", label: "For branches", render: (p) => <BranchTags branches={p.branches} /> }] : []),
     { key: "status", label: "Status", render: (p) => (p.status === "published" ? <Badge tone="green">Listed</Badge> : <Badge>Hidden</Badge>) },
     { key: "chosen", label: "Chosen by", render: (p) => p.chosen },
     { key: "submitted", label: "Submitted", render: (p) => p.submitted },
@@ -272,7 +295,8 @@ export function ProjectSetDetail() {
           <span className="flex flex-wrap items-center gap-2">
             <Badge tone={s.status === "published" ? "green" : "neutral"}>{s.status === "published" ? "Published" : "Draft"}</Badge>
             {audienceText(s, names)} · {s.time_limit_hours ? `${hoursText(s.time_limit_hours)} from choosing` : "No time limit"}
-            {s.due_date ? ` · closes ${formatDate(s.due_date)}` : ""} · {data.total_chosen} chose
+            {s.due_date ? ` · closes ${formatDate(s.due_date)}` : ""}
+            {s.filter_by_branch ? " · filtered by branch" : ""} · {data.total_chosen} chose
           </span>
         }
         action={
@@ -308,7 +332,7 @@ export function ProjectSetDetail() {
         <Card className="mb-4 flex flex-col gap-3 p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
           <p className="text-muted">
             Add projects one by one, or add the ready-made bank of {PROJECT_BANK.length} final-year projects (AI/ML, Generative AI, full-stack, cybersecurity,
-            data science, IoT) with briefs and a 100-mark rubric. You can edit or hide any of them afterwards.
+            data science, IoT, mechanical, electrical, civil) with briefs, branch tags and a 100-mark rubric. You can edit or hide any of them afterwards.
           </p>
           <div className="flex shrink-0 gap-2">
             <Button variant="secondary" loading={busy === "bank"} onClick={addBank}>
@@ -436,6 +460,11 @@ export function ChooseProject() {
       />
       {s.description && <p className="mb-4 max-w-3xl whitespace-pre-line text-sm text-slate-300">{s.description}</p>}
       {s.closed && <ErrorText>This project selection has closed.</ErrorText>}
+      {s.branch_note && (
+        <div className="mb-4">
+          <Notice>{s.branch_note}</Notice>
+        </div>
+      )}
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <input className="input" placeholder="Search projects" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search projects" />
         <select className="input" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Category">

@@ -12,14 +12,20 @@ export const BANK_RUBRIC = [
 
 export const BANK_TIME_LIMIT_HOURS = 6;
 
+// Branch groups (same codes as the server). A project with no branches is open to every branch.
+export const BRANCHES = { CSE: "Computer Science & IT", ECE: "Electronics & Communication", EEE: "Electrical", MECH: "Mechanical", CIVIL: "Civil" };
+
 const SUBMIT = `Submit:
 - A GitHub repository with a README (problem, approach, how to run, screenshots)
 - A 2–3 minute demo video link
 - Suggested time plan: 30 min requirements, 30 min design, 3 h build, 1 h testing, 1 h documentation`;
 
-const p = (category, difficulty, title, description, features, stack) => ({
+// Which branches each category suits: CSE/IT for software, AI, security and data; ECE and Electrical for IoT
+const CATEGORY_BRANCHES = {};
+const p = (category, difficulty, title, description, features, stack, branches) => ({
   category,
   difficulty,
+  branches: branches || CATEGORY_BRANCHES[category] || [],
   title,
   description,
   requirements: `Expected features:\n${features.map((f) => `- ${f}`).join("\n")}\n\nSuggested stack: ${stack}\n\n${SUBMIT}`,
@@ -32,6 +38,13 @@ const WEB = "Web Development & Full-Stack";
 const SEC = "Cybersecurity";
 const DATA = "Data Science & Data Engineering";
 const IOT = "IoT & Electronics";
+const MECH = "Mechanical & Automation";
+const ELEC = "Electrical & Power";
+const CIVIL = "Civil & Smart Construction";
+Object.assign(CATEGORY_BRANCHES, {
+  [AI]: ["CSE"], [GEN]: ["CSE"], [WEB]: ["CSE"], [SEC]: ["CSE"], [DATA]: ["CSE"],
+  [IOT]: ["ECE", "EEE"], [MECH]: ["MECH"], [ELEC]: ["EEE"], [CIVIL]: ["CIVIL"],
+});
 
 export const PROJECT_BANK = [
   // Artificial Intelligence & Machine Learning
@@ -229,4 +242,34 @@ export const PROJECT_BANK = [
     "Monitor a water tank and control the pump automatically.",
     ["Water level sensing (ultrasonic)", "Automatic pump on/off", "Level dashboard on phone or web", "Low/overflow alerts"],
     "ESP32/Arduino, ultrasonic sensor (or simulation), Blynk/Firebase"),
+
+  // Mechanical & Automation
+  p(MECH, "Medium", "Predictive Maintenance System for Rotating Machines",
+    "Unexpected machine breakdowns stop production. Predict failures of motors or pumps from sensor data before they happen.",
+    ["Use a public machine sensor dataset (vibration, temperature) or simulated data", "Detect abnormal behaviour and estimate remaining useful life", "Dashboard of machine health with alerts", "Maintenance recommendation per machine"],
+    "Python, pandas, scikit-learn, Streamlit (optional Arduino vibration sensor)"),
+  p(MECH, "Medium", "Automated Conveyor Sorting System",
+    "Sort products on a conveyor automatically by size or colour.",
+    ["Detect object colour or size with a sensor or camera", "Control a servo/actuator to divert objects", "Count sorted items per category", "Simulation allowed if hardware isn't available (e.g. Tinkercad, Wokwi)"],
+    "Arduino/ESP32, colour or IR sensor, servo motor, or OpenCV with a webcam"),
+
+  // Electrical & Power
+  p(ELEC, "Medium", "Power Quality Monitoring and Fault Detection System",
+    "Voltage dips, surges and overloads damage equipment. Monitor supply quality and flag faults as they happen.",
+    ["Measure voltage and current (sensor or sample dataset)", "Detect under/over-voltage, overload and power-factor issues", "Live dashboard with event log", "Alerts when a fault occurs"],
+    "ESP32/Arduino with voltage and current sensors (or simulation), MQTT/Firebase, dashboard"),
+  p(ELEC, "Medium", "Solar Panel Performance Monitoring System",
+    "Track a solar installation's output and spot underperforming panels.",
+    ["Log voltage, current and power from a panel (or a public solar dataset)", "Compare actual output with expected output for the weather", "Daily and monthly energy reports", "Alert when efficiency drops"],
+    "ESP32/Arduino (or dataset), Python or ThingSpeak, dashboard"),
+
+  // Civil & Smart Construction
+  p(CIVIL, "Medium", "Structural Health Monitoring System",
+    "Detect early signs of damage in bridges or buildings from vibration and tilt readings.",
+    ["Vibration/tilt sensing (accelerometer) or a public structural dataset", "Detect abnormal vibration and tilt beyond safe limits", "Health dashboard with history", "Alerts with the location of the problem"],
+    "ESP32/Arduino with an accelerometer (or simulation), Python, dashboard"),
+  p(CIVIL, "Easy", "Smart Construction Material Estimator",
+    "Estimate the materials and cost for a building from its plan, so site engineers can plan purchases.",
+    ["Input room dimensions or a simple floor plan", "Estimate cement, sand, bricks, steel and concrete quantities", "Cost estimate from editable unit rates", "Exportable bill of quantities"],
+    "Python (Streamlit) or a React web app"),
 ];

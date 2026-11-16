@@ -133,7 +133,7 @@ def project_view(db, project, viewer=None):
         "audience": project.get("audience", "all_students"), "targets": targets,
         "target_names": [names.get(t, t) for t in targets],
         "status": project.get("status", "draft"), "created_at": project.get("created_at"),
-        "difficulty": project.get("difficulty", ""), "set_id": project.get("set_id"),
+        "difficulty": project.get("difficulty", ""), "set_id": project.get("set_id"), "branches": project.get("branches") or [],
     }
 
 
@@ -310,6 +310,12 @@ def project_values(db, data, creating):
     for field, limit in (("category", 80), ("description", 4000), ("requirements", 4000)):
         if field in data:
             out[field] = clean(data.get(field), limit)
+    if "branches" in data:
+        import _project_sets
+        branches = data.get("branches") or []
+        if not isinstance(branches, list) or any(b not in _project_sets.BRANCHES for b in branches):
+            return None, "Unknown branch"
+        out["branches"] = sorted(set(branches))
     if "difficulty" in data:
         if data.get("difficulty") not in ("", None, "Easy", "Medium", "Hard"):
             return None, "Difficulty must be Easy, Medium or Hard"
