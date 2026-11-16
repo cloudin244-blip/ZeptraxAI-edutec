@@ -85,6 +85,12 @@ function SectionTabs({ role }) {
   );
 }
 
+// Main-site accounts start with the placeholder name "Student"; staff shouldn't be labelled that
+const displayName = (u) => {
+  const name = u.full_name || u.name || "";
+  return name && !(name === "Student" && u.role !== "student") ? name : u.email;
+};
+
 const ROLE_LABEL = { staff: "Zeptrax admin", university_admin: "University admin", student: "Student", user: "Member" };
 
 export default function App() {
@@ -143,7 +149,7 @@ function Shell() {
             </NavLink>
           ))}
           <div className="mt-6 border-t border-border px-3 pt-4 text-xs text-muted">
-            <p className="truncate text-slate-300">{user.full_name || user.name || user.email}</p>
+            <p className="truncate text-slate-300">{displayName(user)}</p>
             <p className="truncate">{user.email}</p>
             <p className="mt-1">
               {ROLE_LABEL[role]}

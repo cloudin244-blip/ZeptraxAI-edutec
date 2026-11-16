@@ -115,7 +115,25 @@ export function ProjectSetsSection() {
         )}
       </div>
       <ErrorText>{error}</ErrorText>
-      <Card>{data ? <Table columns={columns} rows={data.sets} empty="No project selections yet." /> : !error && <Loading />}</Card>
+      <Card>
+        {!data ? (
+          !error && <Loading />
+        ) : data.sets.length ? (
+          <Table columns={columns} rows={data.sets} empty="" />
+        ) : (
+          <div className="px-5 py-10 text-center text-sm text-muted">
+            <p>No project selections yet. A selection holds the list of projects students choose from.</p>
+            {superAdmin && (
+              <>
+                <p className="mt-1">Create one and the {PROJECT_BANK.length} ready-made final-year projects are added to it automatically.</p>
+                <Button className="mt-4" onClick={() => setCreating(true)}>
+                  Create a selection with the {PROJECT_BANK.length} projects
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+      </Card>
       {creating && (
         <SetForm
           onClose={() => setCreating(false)}
@@ -135,7 +153,7 @@ function SetForm({ existing, onClose, onSaved }) {
   const [form, setForm] = useState(() =>
     existing
       ? { ...existing, time_limit_hours: existing.time_limit_hours ?? "", due: toDateInput(existing.due_date) }
-      : { title: "", description: "", audience: "universities", targets: [], time_limit_hours: BANK_TIME_LIMIT_HOURS, due: "", filter_by_branch: true }
+      : { title: "", description: "", audience: "universities", targets: [], time_limit_hours: BANK_TIME_LIMIT_HOURS, due: "", filter_by_branch: true, with_bank: true }
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -157,6 +175,7 @@ function SetForm({ existing, onClose, onSaved }) {
         onSaved();
       } else {
         const { set: created } = await portal.post("/project-sets", body);
+        if (form.with_bank) await portal.post(`/project-sets/${created.id}/projects`, { projects: PROJECT_BANK }, { retries: 2 });
         navigate(`/projects/sets/${created.id}`);
       }
     } catch (err) {
@@ -208,6 +227,15 @@ function SetForm({ existing, onClose, onSaved }) {
             <input className="input" type="date" value={form.due} onChange={(e) => set("due", e.target.value)} />
           </Field>
         </div>
+        {!existing && (
+          <label className="flex items-start gap-2 rounded-lg border border-border p-3 text-sm">
+            <input type="checkbox" className="mt-0.5" checked={form.with_bank} onChange={(e) => set("with_bank", e.target.checked)} />
+            <span>
+              <span className="font-medium">Add the {PROJECT_BANK.length} ready-made projects</span>
+              <span className="block text-xs text-muted">AI/ML, Generative AI, full-stack, cybersecurity, data, IoT, mechanical, electrical and civil, with briefs, branch tags and a 100-mark rubric. You can edit or hide any of them.</span>
+            </span>
+          </label>
+        )}
         <ErrorText>{error}</ErrorText>
         <div className="flex justify-end gap-2">
           <Button variant="secondary" type="button" onClick={onClose}>
@@ -345,7 +373,7 @@ export function ProjectSetDetail() {
         </Card>
       )}
       <Card>
-        <Table columns={columns} rows={data.projects} empty="No projects in this selection yet." />
+        <Table columns={columns} rows={data.projects} empty={superAdmin ? `No projects yet. Click "Add project bank (${PROJECT_BANK.length})" above, or add your own.` : "No projects in this selection yet."} />
       </Card>
       {superAdmin && !data.total_chosen && (
         <div className="mt-6">
