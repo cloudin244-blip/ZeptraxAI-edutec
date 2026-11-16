@@ -82,16 +82,31 @@ def total(project):
     return sum(r["max_marks"] for r in project.get("rubric") or [])
 
 
-def project_view(db, project):
-    titles = {p["slug"]: p["title"] for p in db["CatalogProgram"].find({}, {"slug": 1, "title": 1})}
-    unis = {u["id"]: u["name"] for u in db["University"].find({}, {"id": 1, "name": 1})}
+def lookup_names(db):
+    """(program slug -> title, university id -> name), shared by every project on a page"""
+    return core.cached("project_names", 60, lambda: (
+        {p["slug"]: p["title"] for p in db["CatalogProgram"].find({}, {"slug": 1, "title": 1})},
+        {u["id"]: u["name"] for u in db["University"].find({}, {"id": 1, "name": 1})},
+    ))
+
+
+def visible_to_university(project, university_id):
+    """A university admin sees projects for all students, for programs, or aimed at their own university"""
+    return project.get("audience") != "universities" or university_id in (project.get("targets") or [])
+
+
+def project_view(db, project, viewer=None):
+    titles, unis = lookup_names(db)
     names = titles if project.get("audience") == "programs" else unis
+    targets = project.get("targets") or []
+    if viewer and viewer.get("role") == UNIVERSITY_ADMIN and project.get("audience") == "universities":
+        targets = [t for t in targets if t == viewer.get("university_id")]  # don't reveal other universities
     return {
         "id": project["id"], "title": project["title"], "category": project.get("category", ""),
         "description": project.get("description", ""), "requirements": project.get("requirements", ""),
         "rubric": project.get("rubric") or [], "total_marks": total(project), "due_date": project.get("due_date"),
-        "audience": project.get("audience", "all_students"), "targets": project.get("targets") or [],
-        "target_names": [names.get(t, t) for t in project.get("targets") or []],
+        "audience": project.get("audience", "all_students"), "targets": targets,
+        "target_names": [names.get(t, t) for t in targets],
         "status": project.get("status", "draft"), "created_at": project.get("created_at"),
     }
 
@@ -115,20 +130,24 @@ def overdue(project):
 
 def list_projects(db, user):
     if user.get("role") == STUDENT:
+        projects = [p for p in db["PortalProject"].find({"status": "published"}).sort("created_at", -1) if assigned_to(p, user)]
+        subs = {s["project_id"]: s for s in db["ProjectSubmission"].find(
+            {"user_id": user["id"], "project_id": {"$in": [p["id"] for p in projects]}})} if projects else {}
         items = []
-        for p in db["PortalProject"].find({"status": "published"}).sort("created_at", -1):
-            if assigned_to(p, user):
-                view = project_view(db, p)
-                view["submission"] = submission_view(db["ProjectSubmission"].find_one({"project_id": p["id"], "user_id": user["id"]}))
-                view["overdue"] = overdue(p)
-                items.append(view)
+        for p in projects:
+            view = project_view(db, p)
+            view["submission"] = submission_view(subs.get(p["id"]))
+            view["overdue"] = overdue(p)
+            items.append(view)
         return ok({"projects": items})
     if not (is_staff(user) or user.get("role") == UNIVERSITY_ADMIN):
         return ok({"projects": []})
     university_id = None if is_staff(user) else user.get("university_id")
     items = []
     for p in db["PortalProject"].find({} if is_staff(user) else {"status": "published"}).sort("created_at", -1):
-        view = project_view(db, p)
+        if university_id and not visible_to_university(p, university_id):
+            continue
+        view = project_view(db, p, user)
         subs = {"project_id": p["id"], **({"university_id": university_id} if university_id else {})}
         view.update({
             "assigned": db["User"].count_documents(student_filter(p, university_id)),
@@ -150,8 +169,10 @@ def get_project(db, user, project_id):
         view["submission"] = submission_view(db["ProjectSubmission"].find_one({"project_id": project_id, "user_id": user["id"]}))
         view["overdue"] = overdue(project)
         return ok({"project": view})
-    if is_staff(user) or (user.get("role") == UNIVERSITY_ADMIN and project.get("status") == "published"):
+    if is_staff(user):
         return ok({"project": project_view(db, project)})
+    if user.get("role") == UNIVERSITY_ADMIN and project.get("status") == "published" and visible_to_university(project, user.get("university_id")):
+        return ok({"project": project_view(db, project, user)})
     return error(403, "Not allowed")
 
 
@@ -161,12 +182,11 @@ def list_submissions(db, user, project_id):
         return error(404, "Project not found")
     if is_staff(user):
         university_id = None
-    elif user.get("role") == UNIVERSITY_ADMIN and project.get("status") == "published":
+    elif user.get("role") == UNIVERSITY_ADMIN and project.get("status") == "published" and visible_to_university(project, user.get("university_id")):
         university_id = user.get("university_id")
     else:
         return error(403, "Not allowed")
-    unis = {u["id"]: u["name"] for u in db["University"].find({}, {"id": 1, "name": 1})}
-    titles = {p["slug"]: p["title"] for p in db["CatalogProgram"].find({}, {"slug": 1, "title": 1})}
+    titles, unis = lookup_names(db)
     subs = {s["user_id"]: s for s in db["ProjectSubmission"].find({"project_id": project_id})}
     rows = []
     for st in db["User"].find(student_filter(project, university_id)):
@@ -178,7 +198,7 @@ def list_submissions(db, user, project_id):
             "submission": submission_view(sub),
         })
     rows.sort(key=lambda r: (r["submission"] is None, (r["submission"] or {}).get("status") == "evaluated", r["student"]["full_name"].lower()))
-    return ok({"project": project_view(db, project), "rows": rows})
+    return ok({"project": project_view(db, project, user), "rows": rows})
 
 
 # ---------------------------------------------------------------- students submit
@@ -205,14 +225,20 @@ def submit(db, user, project_id, body):
         if values[k] and not re.match(r"https?://[^\s]+\.[^\s]+", values[k]):
             return error(400, "Links must be full addresses starting with https://")
     now = time.time()
-    if existing:
-        db["ProjectSubmission"].update_one({"id": existing["id"]}, {"$set": {**values, "updated_at": now}})
-        sub_id = existing["id"]
-    else:
+    if not existing:
         sub_id = str(uuid.uuid4())
-        db["ProjectSubmission"].insert_one({"id": sub_id, "project_id": project_id, "user_id": user["id"],
-                                            "university_id": user.get("university_id"), "status": "submitted",
-                                            "submitted_at": now, "updated_at": now, **values})
+        try:
+            db["ProjectSubmission"].insert_one({"id": sub_id, "project_id": project_id, "user_id": user["id"],
+                                                "university_id": user.get("university_id"), "status": "submitted",
+                                                "submitted_at": now, "updated_at": now, **values})
+        except core.DuplicateKeyError:  # submitted twice at the same moment: treat the second as an edit
+            existing = db["ProjectSubmission"].find_one({"project_id": project_id, "user_id": user["id"]})
+    if existing:
+        # Not while it's being marked: the update only applies to an unmarked submission
+        if not db["ProjectSubmission"].update_one({"id": existing["id"], "status": {"$ne": "evaluated"}},
+                                                  {"$set": {**values, "updated_at": now}}).matched_count:
+            return error(409, "Your project has been marked, so it can't be changed.")
+        sub_id = existing["id"]
     return ok({"submission": submission_view(db["ProjectSubmission"].find_one({"id": sub_id}))})
 
 

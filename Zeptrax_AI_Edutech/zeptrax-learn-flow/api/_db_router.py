@@ -32,47 +32,187 @@ def load_dotenv():
 
 load_dotenv()
 
-# Global MongoDB Client & DB connection
+try:
+    from pymongo.errors import PyMongoError, DuplicateKeyError
+except ImportError:  # pymongo missing: the API serves static fallbacks only
+    class PyMongoError(Exception):
+        pass
+
+    class DuplicateKeyError(PyMongoError):
+        pass
+
+# Bump when INDEXES changes: each new server instance then builds the indexes once
+INDEX_VERSION = 4
+
+# (collection, keys, options). Lookups that run on every request or every exam answer must be indexed,
+# otherwise each one scans the whole collection and the database falls over under exam-day load.
+INDEXES = [
+    ("User", "email", {"unique": True}),
+    ("User", "token", {}),
+    ("User", "id", {}),
+    ("User", "university_id", {}),
+    ("User", [("role", 1), ("university_id", 1), ("created_at", -1)], {}),
+    ("User", "invite_link_id", {"sparse": True}),
+    ("Student", "id", {"unique": True}),
+    ("Course", "id", {"unique": True}),
+    ("Enrollment", "id", {"unique": True}),
+    ("Enrollment", "student_id", {}),
+    ("Enrollment", "student_email", {}),
+    ("Certificate", "certificate_code", {}),
+    ("University", "id", {"unique": True}),
+    ("University", "code", {"unique": True}),
+    ("Invitation", "token_hash", {"unique": True}),
+    ("Invitation", "campaign_id", {}),
+    ("Invitation", [("university_id", 1), ("role", 1), ("used_at", 1), ("expires_at", 1)], {}),
+    ("InvitationCampaign", "id", {}),
+    ("InvitationCampaign", [("university_id", 1), ("created_at", -1)], {}),
+    ("InviteLink", "id", {"unique": True}),
+    ("InviteLink", "code", {"unique": True}),
+    ("InviteLink", [("university_id", 1), ("created_at", -1)], {}),
+    ("Assessment", "id", {}),
+    ("Assessment", [("status", 1), ("created_at", 1)], {}),
+    ("AssessmentQuestion", "assessment_id", {}),
+    ("AssessmentQuestion", "id", {}),
+    ("AssessmentAttempt", [("assessment_id", 1), ("user_id", 1)], {"unique": True}),
+    ("AssessmentAttempt", "id", {}),
+    ("ProctorEvidence", [("attempt_id", 1), ("at", 1)], {}),
+    ("AssessmentAttempt", [("assessment_id", 1), ("university_id", 1), ("status", 1)], {}),
+    ("CatalogProgram", "slug", {"unique": True}),  # same as scripts/seed_catalog.py
+    ("CatalogProgram", [("visible", 1), ("order", 1)], {}),
+    ("PortalProject", "id", {}),
+    ("ProjectSubmission", [("project_id", 1), ("user_id", 1)], {"unique": True}),
+    ("ProjectSubmission", "id", {}),
+    # Short-lived documents removed by MongoDB itself once `expires_at` passes
+    ("RateLimit", "expires_at", {"expireAfterSeconds": 0}),
+    ("AuditLog", "expires_at", {"expireAfterSeconds": 0, "sparse": True}),
+]
+
+
+def ensure_indexes(database, force=False):
+    """Create INDEXES once per INDEX_VERSION. A new server instance only pays one small read for this."""
+    meta = database["_meta"]
+    if not force:
+        marker = meta.find_one({"_id": "indexes"})
+        if marker and marker.get("version", 0) >= INDEX_VERSION:
+            return
+    failures = 0
+    for collection, keys, options in INDEXES:
+        try:
+            database[collection].create_index(keys, **options)
+        except Exception as idx_err:  # e.g. old duplicate data blocks a unique index; the rest still get built
+            failures += 1
+            print(f"[MongoDB] Index {collection}.{keys} not created: {idx_err}")
+    if not failures:
+        meta.update_one({"_id": "indexes"}, {"$set": {"version": INDEX_VERSION, "built_at": time.time()}}, upsert=True)
+    print(f"[MongoDB] Indexes checked (version {INDEX_VERSION}, {failures} failed).")
+
+
+def _connect():
+    mongo_uri = os.environ.get("MONGODB_URI")
+    if not mongo_uri:
+        print("[MongoDB] Warning: MONGODB_URI env variable is not set. Using local mock fallbacks.")
+        return None
+    from pymongo import MongoClient
+    try:
+        import certifi
+        tls_options = {"tlsCAFile": certifi.where()}
+    except ImportError:
+        tls_options = {}
+    # Many short-lived serverless instances share one Atlas cluster: keep each instance's pool small so the
+    # cluster's connection limit isn't exhausted, and fail fast (the client retries) instead of hanging.
+    client = MongoClient(
+        mongo_uri,
+        maxPoolSize=int(os.environ.get("MONGO_MAX_POOL_SIZE") or 20),
+        minPoolSize=0,
+        maxIdleTimeMS=60_000,
+        serverSelectionTimeoutMS=5_000,
+        connectTimeoutMS=5_000,
+        socketTimeoutMS=20_000,
+        waitQueueTimeoutMS=8_000,
+        retryWrites=True,
+        retryReads=True,
+        appname="zeptrax-edutech",
+        **tls_options,
+    )
+    database = client[os.environ.get("MONGODB_DB") or "zeptrax_db"]
+    try:
+        ensure_indexes(database)
+    except Exception as idx_err:
+        print(f"[MongoDB] Index check skipped: {idx_err}")
+    return database
+
+
+# Global MongoDB connection, reused by every request this server instance handles
 db = None
 try:
-    # Read MongoDB URI from environment
-    mongo_uri = os.environ.get("MONGODB_URI")
-    if mongo_uri:
-        from pymongo import MongoClient
-        try:
-            import certifi
-            tls_options = {"tlsCAFile": certifi.where()}
-        except ImportError:
-            tls_options = {}
-        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000, **tls_options)
-        db = client["zeptrax_db"]
-        # Ping check
-        client.admin.command('ping')
-        print("[MongoDB] Connected successfully to zeptrax_db.")
-
-        # Build performance indexes for high-traffic scalability
-        try:
-            db["User"].create_index("email", unique=True)
-            db["User"].create_index("token")
-            db["Student"].create_index("id", unique=True)
-            db["Course"].create_index("id", unique=True)
-            db["Enrollment"].create_index("id", unique=True)
-            db["University"].create_index("id", unique=True)
-            db["University"].create_index("code", unique=True)
-            db["Invitation"].create_index("token_hash", unique=True)
-            db["Invitation"].create_index("campaign_id")
-            db["User"].create_index("university_id")
-            db["AssessmentAttempt"].create_index([("assessment_id", 1), ("user_id", 1)], unique=True)
-            db["AssessmentQuestion"].create_index("assessment_id")
-            db["ProjectSubmission"].create_index([("project_id", 1), ("user_id", 1)], unique=True)
-            print("[MongoDB] Performance indexes built/verified successfully.")
-        except Exception as idx_err:
-            print(f"[MongoDB] Index creation warning: {idx_err}")
-    else:
-        print("[MongoDB] Warning: MONGODB_URI env variable is not set. Using local mock fallbacks.")
+    db = _connect()
 except Exception as e:
     print(f"[MongoDB] Error initializing database: {e}")
     db = None
+
+
+# ---------------------------------------------------------------- small in-process caches
+
+_cache = {}
+
+
+def cached(key, ttl, compute, keep=None):
+    """Value of compute(), reused for `ttl` seconds within this server instance (only if keep(value))"""
+    hit = _cache.get(key)
+    now = time.monotonic()
+    if hit and hit[0] > now:
+        return hit[1]
+    value = compute()
+    if keep and not keep(value):
+        return value
+    if len(_cache) > 5000:
+        _cache.clear()
+    _cache[key] = (now + ttl, value)
+    return value
+
+
+def ok_response(response):
+    return isinstance(response, dict) and response.get("status", 200) == 200
+
+
+def uncache(prefix):
+    for key in [k for k in _cache if k.startswith(prefix)]:
+        _cache.pop(key, None)
+
+
+# ---------------------------------------------------------------- rate limiting
+
+def client_ip(headers):
+    for name in ("x-real-ip", "x-forwarded-for", "x-vercel-forwarded-for"):
+        for key, val in (headers or {}).items():
+            if key.lower() == name and val:
+                return val.split(",")[0].strip()
+    return "unknown"
+
+
+def rate_limited(key, limit, window_seconds):
+    """True once `key` has been seen more than `limit` times in the current window.
+    Counted in MongoDB so every server instance shares the count. Fails open if the database hiccups."""
+    if db is None:
+        return False
+    from datetime import datetime, timezone
+    bucket = int(time.time() // window_seconds)
+    try:
+        doc = db["RateLimit"].find_one_and_update(
+            {"_id": f"{key}:{bucket}"},
+            {"$inc": {"n": 1}, "$setOnInsert": {
+                "expires_at": datetime.fromtimestamp((bucket + 1) * window_seconds + 60, tz=timezone.utc)}},
+            upsert=True,
+            return_document=True,
+        )
+        return bool(doc) and doc.get("n", 0) > limit
+    except PyMongoError as e:
+        print(f"[rate_limit] {e}")
+        return False
+
+
+def too_many(message="Too many attempts. Please wait a few minutes and try again."):
+    return {"status": 429, "body": {"error": message}, "headers": {"Retry-After": "60"}}
 
 def serialize_doc(doc):
     """Recursively serializes MongoDB documents (converts ObjectId to string)"""
@@ -91,24 +231,6 @@ def serialize_doc(doc):
 # Override with the SUPER_ADMIN_EMAIL environment variable.
 SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "cloudin244@gmail.com").strip().lower()
 
-# Collections only admins may read through the generic entity endpoints
-ADMIN_ONLY_READ = {"User", "AdminInvitation", "EmailLog", "AuditLog", "StudentProfile",
-                   "University", "InvitationCampaign", "Invitation",
-                   "Assessment", "AssessmentQuestion", "AssessmentAttempt",
-                   "CatalogProgram", "CatalogFreeCourse", "PortalProject", "ProjectSubmission"}
-
-# Collections only admins may change through the generic entity endpoints
-ADMIN_ONLY_WRITE = {"User", "StudentProfile", "University", "InvitationCampaign", "Invitation",
-                    "Assessment", "AssessmentQuestion", "AssessmentAttempt", "PortalProject", "ProjectSubmission",
-                    "AdminInvitation", "Certificate", "Course", "CourseModule", "Document",
-                    "EmailLog", "Project", "TeamMember", "Review"}
-
-# Website content only the super admin may change (courses, their modules and the website catalog)
-SUPER_ADMIN_ONLY_WRITE = {"Course", "CourseModule", "CatalogProgram", "CatalogFreeCourse", "Project"}
-
-# Collections anyone (even logged out) may add to through the generic entity endpoints
-ANONYMOUS_CREATE_OK = {"AuditLog"}
-
 # User fields that only the backend sets
 PROTECTED_USER_FIELDS = ("_id", "id", "email", "token", "role", "verified", "password", "password_hash",
                          "university_id", "department", "batch", "invitation_id",
@@ -117,13 +239,25 @@ PROTECTED_USER_FIELDS = ("_id", "id", "email", "token", "role", "verified", "pas
 
 PBKDF2_ITERATIONS = 200_000
 
-# Without email settings no code can be sent, so verify-otp only signs in brand-new accounts within this window
-OTP_WINDOW_SECONDS = 30 * 60
-
 # Emailed verification codes (used once SMTP_HOST, SMTP_USER and SMTP_PASSWORD are set)
 OTP_TTL_SECONDS = 10 * 60
 OTP_MAX_ATTEMPTS = 5
 OTP_RESEND_SECONDS = 60
+
+# Abuse limits. Students on one campus often share a single public IP, so per-IP limits are generous.
+LOGIN_ATTEMPTS_PER_EMAIL = int(os.environ.get("LOGIN_ATTEMPTS_PER_EMAIL") or 20)   # per 15 minutes
+SIGNUPS_PER_IP = int(os.environ.get("SIGNUPS_PER_IP") or 600)                       # per 10 minutes
+
+BUSY_MESSAGE = "The server is busy right now. Please try again in a few seconds."
+
+# CDN caching for public responses that are the same for every visitor
+PUBLIC_CACHE = {"Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=600"}
+
+
+def analytics_expiry():
+    from datetime import datetime, timedelta, timezone
+    return datetime.now(timezone.utc) + timedelta(days=30)
+
 
 UNAVAILABLE = {"status": 503, "body": {"error": "Student records are temporarily unavailable. Please try again later."}}
 
@@ -237,10 +371,15 @@ def issue_otp(user):
 
 
 def apply_bootstrap_role(user):
-    """Give the configured super-admin account its role in the database"""
-    if user and normalize_email(user.get("email")) == SUPER_ADMIN_EMAIL and user.get("role") != "super_admin":
-        db["User"].update_one({"_id": user["_id"]}, {"$set": {"role": "super_admin"}})
-        user["role"] = "super_admin"
+    """First-time setup: give the configured account the super_admin role. Only a verified main-site account
+    qualifies (never a student created through a signup link), and only while no super admin exists, so
+    nobody can claim the role by registering that email later."""
+    if (user and normalize_email(user.get("email")) == SUPER_ADMIN_EMAIL and user.get("role") in ("user", "admin")
+            and user.get("verified") is True and user.get("status") != "inactive"):
+        if not cached("super_admin_exists", 300, lambda: db["User"].count_documents({"role": "super_admin"}, limit=1) > 0):
+            db["User"].update_one({"_id": user["_id"]}, {"$set": {"role": "super_admin"}})
+            user["role"] = "super_admin"
+            uncache("super_admin_exists")
     return user
 
 
@@ -383,10 +522,25 @@ def get_authorized_user(headers):
     token = auth_header.split(" ", 1)[1].strip()
     if not token:
         return None
+    # Every API call authenticates; during an exam that is one lookup per saved answer, so a signed-in
+    # user is reused for a few seconds. forget_user() drops it after the user's own record changes.
+    user = cached(f"user:{token}", USER_CACHE_SECONDS, lambda: _load_user(token))
+    return dict(user) if user else None
+
+
+USER_CACHE_SECONDS = 15
+
+
+def _load_user(token):
     user = apply_bootstrap_role(db["User"].find_one({"token": token}))
     if user and user.get("status") == "inactive":
         return None
     return serialize_doc(user)
+
+
+def forget_user(token):
+    if token:
+        _cache.pop(f"user:{token}", None)
 
 def _handle_db_request(method, path, query_params, body_data, headers):
     """
@@ -400,7 +554,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
 
     # Partner page: public university list; full student list and university edits for admins only
     if normalized == "/partner/universities" and method == "GET":
-        return partner_universities()
+        response = cached("partner_universities", 120, partner_universities, ok_response)
+        return {**response, "headers": PUBLIC_CACHE} if response["status"] == 200 else response
     if normalized == "/admin/students" and method == "GET":
         return admin_students(headers)
     if normalized == "/admin/students/university" and method == "PUT":
@@ -409,14 +564,15 @@ def _handle_db_request(method, path, query_params, body_data, headers):
     # Website catalog (programs and free courses), public read
     if path.rstrip("/") == "/api/catalog" and method == "GET":
         import _catalog
-        return _catalog.public_catalog(db)
+        response = cached("public_catalog", 30, lambda: _catalog.public_catalog(db), ok_response)
+        return {**response, "headers": PUBLIC_CACHE} if response.get("status") == 200 else response
 
     # University portal: /api/portal/...
     if path.startswith("/api/portal/"):
         if db is None:
             return UNAVAILABLE
         import _portal
-        return _portal.handle(db, method, normalized[len("/portal"):], query_params, body_data, get_authorized_user(headers))
+        return _portal.handle(db, method, normalized[len("/portal"):], query_params, body_data, get_authorized_user(headers), headers)
 
     if db is None:
         return None  # Database not initialized; fallback to static file mocks
@@ -432,6 +588,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
             email = normalize_email(user_data.get("email"))
             if not email:
                 return {"status": 400, "body": {"error": "Email is required"}}
+            if rate_limited(f"register:{client_ip(headers)}", SIGNUPS_PER_IP, 10 * 60):
+                return too_many()
             password = user_data.get("password")
             if not isinstance(password, str) or len(password) < 6:
                 return {"status": 400, "body": {"error": "Password must be at least 6 characters"}}
@@ -449,13 +607,16 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                 "email": email,
                 "password_hash": hash_password(password),
                 "name": user_data.get("name", "Student"),
-                "role": "super_admin" if email == SUPER_ADMIN_EMAIL else "user",  # never trust a client-supplied role
+                "role": "user",  # never trust a client-supplied role
                 "token": token,
-                "verified": False,
+                "verified": not email_configured(),
                 "created_at": time.time(),
                 "app_id": app_id
             }
-            db["User"].insert_one(new_user)
+            try:
+                db["User"].insert_one(new_user)
+            except DuplicateKeyError:
+                return {"status": 400, "body": {"error": "User already exists"}}
             if email_configured():
                 issue_otp(new_user)  # a failed send can be retried with "Resend code"
             user_response = public_user(serialize_doc(new_user))
@@ -468,6 +629,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                 }
             }
         except Exception as e:
+            if isinstance(e, PyMongoError):
+                raise
             return {"status": 500, "body": {"error": str(e)}}
 
     # POST /apps/<appId>/auth/login
@@ -478,6 +641,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
             email = normalize_email(login_data.get("email"))
             password = login_data.get("password")
 
+            if email and rate_limited(f"login:{email}", LOGIN_ATTEMPTS_PER_EMAIL, 15 * 60):
+                return too_many("Too many sign-in attempts for this email. Please wait 15 minutes and try again.")
             user = db["User"].find_one({"email": email}) if email else None
             if not user or not check_password(user, password) or user.get("status") == "inactive":
                 return {"status": 401, "body": {"error": "Invalid email or password"}}
@@ -504,6 +669,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                 }
             }
         except Exception as e:
+            if isinstance(e, PyMongoError):
+                raise
             return {"status": 500, "body": {"error": str(e)}}
 
     # POST /apps/<appId>/auth/verify-otp
@@ -531,9 +698,9 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                     db["User"].update_one({"_id": user["_id"]}, {"$inc": {"otp_attempts": 1}})
                     message = "That code isn't right. Check the latest email from ZeptraAI and try again."
                     return {"status": 400, "body": {"error": message, "message": message}}
-            elif time.time() - user.get("created_at", 0) > OTP_WINDOW_SECONDS:
-                # No email service: brand-new accounts only, so this can't be used to take over existing ones
-                message = "Verification expired. Please log in with your email and password."
+            else:
+                # No email service, so no code can be checked: never hand out a token for just an email address
+                message = "Please log in with your email and password."
                 return {"status": 401, "body": {"error": message, "message": message}}
             db["User"].update_one({"_id": user["_id"]}, {"$set": {"verified": True},
                                                          "$unset": {"otp_hash": "", "otp_expires_at": "", "otp_attempts": "", "otp_sent_at": ""}})
@@ -555,6 +722,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                 }
             }
         except Exception as e:
+            if isinstance(e, PyMongoError):
+                raise
             return {"status": 500, "body": {"error": str(e)}}
 
     # POST /apps/<appId>/auth/resend-otp
@@ -584,12 +753,17 @@ def _handle_db_request(method, path, query_params, body_data, headers):
     if match and method == "POST":
         try:
             log_data = json.loads(body_data) if body_data else {}
+            if not isinstance(log_data, dict):
+                log_data = {"events": log_data}
             log_data["timestamp"] = time.time()
             log_data["app_id"] = match.group(1)
             log_data["type"] = "home_visit"
+            log_data["expires_at"] = analytics_expiry()
             db["AuditLog"].insert_one(log_data)
             return {"status": 200, "body": {"ok": True}}
         except Exception as e:
+            if isinstance(e, PyMongoError):
+                raise
             return {"status": 500, "body": {"error": str(e)}}
 
     # POST /apps/<appId>/analytics/track/batch
@@ -597,276 +771,34 @@ def _handle_db_request(method, path, query_params, body_data, headers):
     if match and method == "POST":
         try:
             batch_data = json.loads(body_data) if body_data else {}
+            if not isinstance(batch_data, dict):
+                batch_data = {"events": batch_data}
             batch_data["timestamp"] = time.time()
             batch_data["app_id"] = match.group(1)
+            batch_data["expires_at"] = analytics_expiry()
             db["AuditLog"].insert_one(batch_data)
             return {"status": 200, "body": {"ok": True}}
         except Exception as e:
+            if isinstance(e, PyMongoError):
+                raise
             return {"status": 500, "body": {"error": str(e)}}
 
-    # --- 3. ENTITY ENDPOINTS ---
-
-    # Regex pattern matching /apps/<appId>/entities/<entity> or /apps/<appId>/entities/<entity>/<itemId>
+    # --- 3. ENTITY ENDPOINTS (main website) ---
+    # Only collections with explicit rules in _entities.py are reachable; everything else is refused.
     match = re.match(r"^/apps/([^/]+)/entities/([^/]+)(?:/([^/]+))?$", normalized)
     if match:
-        app_id = match.group(1)
-        entity = match.group(2)
-        item_id = match.group(3)
-
-        collection = db[entity]
-
-        # SPECIAL CASE: GET /entities/User/me
-        if entity == "User" and item_id == "me":
-            if method == "GET":
-                user = get_authorized_user(headers)
-                if not user:
-                    return {
-                        "status": 401,
-                        "body": {
-                            "message": "Authentication required to view users",
-                            "detail": "You must be logged in to perform this operation."
-                        }
-                    }
-                return {"status": 200, "body": public_user(user)}
-
-            elif method == "PUT":
-                user = get_authorized_user(headers)
-                if not user:
-                    return {"status": 401, "body": {"error": "Authentication required"}}
-                try:
-                    update_data = json.loads(body_data) if body_data else {}
-                    # Avoid updating the immutable fields
-                    if not isinstance(update_data, dict):
-                        return {"status": 400, "body": {"error": "Invalid profile data"}}
-                    for field in PROTECTED_USER_FIELDS:  # users must not promote themselves or change identity
-                        update_data.pop(field, None)
-
-                    db["User"].update_one({"id": user["id"]}, {"$set": update_data})
-                    updated_user = db["User"].find_one({"id": user["id"]})
-                    return {"status": 200, "body": public_user(serialize_doc(updated_user))}
-                except Exception as e:
-                    return {"status": 500, "body": {"error": str(e)}}
-
-        # ACCESS CONTROL
-        requester = get_authorized_user(headers)
-        admin = is_admin(requester)
-        if method != "GET" and entity in SUPER_ADMIN_ONLY_WRITE and not is_super_admin(requester):
-            return {"status": 403, "body": {"error": "Only the super admin can change courses and the website catalog"}}
-        if not admin:
-            if method == "GET" and entity in ADMIN_ONLY_READ:
-                return {"status": 403, "body": {"error": "Admin access required"}}
-            if method != "GET" and entity in ADMIN_ONLY_WRITE:
-                return {"status": 403, "body": {"error": "Admin access required"}}
-            if method == "GET" and entity == "Enrollment" and not requester:
-                return {"status": 401, "body": {"error": "Authentication required"}}
-            # Bulk delete / update-many can wipe whole collections
-            if (method == "DELETE" and (not item_id or item_id in ("bulk", "update-many"))) or method == "PATCH":
-                return {"status": 403, "body": {"error": "Admin access required"}}
-            if method == "PUT" and item_id in (None, "bulk", "update-many"):
-                return {"status": 403, "body": {"error": "Admin access required"}}
-            if method != "GET" and not requester and not (method == "POST" and entity in ANONYMOUS_CREATE_OK):
-                return {"status": 401, "body": {"error": "Authentication required"}}
-            if method in ("PUT", "DELETE") and entity == "Enrollment" and item_id and item_id not in ("bulk", "update-many"):
-                existing = collection.find_one({"id": item_id})
-                if existing and existing.get("student_id") != requester.get("id") and existing.get("student_email") != requester.get("email"):
-                    return {"status": 403, "body": {"error": "You can only change your own enrollments"}}
-        # Students only ever see their own enrollments
-        own_enrollments = None
-        if entity == "Enrollment" and not admin and requester:
-            own_enrollments = {"$or": [{"student_id": requester.get("id")}, {"student_email": requester.get("email")}]}
-
-        # GENERAL CRUD OPERATIONS FOR ENTITIES
-
-        # A. GET requests (List / Filter / Retrieve)
-        if method == "GET":
-            # Retrieve single document by ID
-            if item_id and item_id not in ("bulk", "update-many"):
-                doc = collection.find_one({"id": item_id})
-                if not doc:
-                    doc = collection.find_one({"_id": item_id})  # Fallback to ObjectId string
-                if not doc:
-                    return {"status": 404, "body": {"error": f"Item {item_id} not found in {entity}"}}
-                if own_enrollments and doc.get("student_id") != requester.get("id") and doc.get("student_email") != requester.get("email"):
-                    return {"status": 404, "body": {"error": f"Item {item_id} not found in {entity}"}}
-                doc = serialize_doc(doc)
-                return {"status": 200, "body": public_user(doc) if entity == "User" else doc}
-
-            # List or filter documents
-            else:
-                filter_dict = {}
-                q_param = query_params.get("q")
-                if q_param:
-                    try:
-                        filter_dict = json.loads(q_param[0])
-                    except Exception as e:
-                        print(f"Error parsing filter: {e}")
-
-                # Anyone may verify a certificate by its code; full certificate lists are admin-only
-                if entity == "Certificate" and not admin and not (isinstance(filter_dict, dict) and filter_dict.get("certificate_code")):
-                    return {"status": 403, "body": {"error": "Admin access required"}}
-                if own_enrollments:
-                    filter_dict = {"$and": [filter_dict, own_enrollments]} if filter_dict else own_enrollments
-
-                # Setup sorting
-                sort_list = []
-                sort_param = query_params.get("sort")
-                if sort_param:
-                    sort_field = sort_param[0]
-                    direction = 1
-                    if sort_field.startswith("-"):
-                        direction = -1
-                        sort_field = sort_field[1:]
-                    sort_list.append((sort_field, direction))
-                else:
-                    sort_list.append(("created_date", -1)) # Default sort
-
-                # Setup pagination
-                limit_val = 0
-                limit_param = query_params.get("limit")
-                if limit_param:
-                    try:
-                        limit_val = int(limit_param[0])
-                    except ValueError:
-                        pass
-
-                skip_val = 0
-                skip_param = query_params.get("skip")
-                if skip_param:
-                    try:
-                        skip_val = int(skip_param[0])
-                    except ValueError:
-                        pass
-
-                cursor = collection.find(filter_dict)
-                if sort_list:
-                    # Ignore sorting if default field is missing in first query schema
-                    try:
-                        cursor = cursor.sort(sort_list)
-                    except Exception:
-                        pass
-                if skip_val:
-                    cursor = cursor.skip(skip_val)
-                if limit_val:
-                    cursor = cursor.limit(limit_val)
-
-                results = serialize_doc(list(cursor))
-                if entity == "User":
-                    results = [public_user(u) for u in results]
-                return {"status": 200, "body": results}
-
-        # B. POST requests (Create / Bulk Create)
-        elif method == "POST":
-            # Bulk insertion
-            if item_id == "bulk":
-                try:
-                    docs = json.loads(body_data) if body_data else []
-                    if not isinstance(docs, list):
-                        docs = [docs]
-                    inserted_docs = []
-                    for doc in docs:
-                        if not isinstance(doc, dict):
-                            continue
-                        if "id" not in doc:
-                            doc["id"] = str(uuid.uuid4())
-                        if "created_date" not in doc:
-                            doc["created_date"] = time.time()
-                        collection.insert_one(doc)
-                        inserted_docs.append(serialize_doc(doc))
-                    return {"status": 200, "body": inserted_docs}
-                except Exception as e:
-                    return {"status": 500, "body": {"error": str(e)}}
-
-            # Single insertion
-            else:
-                try:
-                    doc = json.loads(body_data) if body_data else {}
-                    if "id" not in doc:
-                        doc["id"] = str(uuid.uuid4())
-                    if "created_date" not in doc:
-                        doc["created_date"] = time.time()
-                    collection.insert_one(doc)
-                    return {"status": 200, "body": serialize_doc(doc)}
-                except Exception as e:
-                    return {"status": 500, "body": {"error": str(e)}}
-
-        # C. PUT requests (Update / Bulk Update)
-        elif method == "PUT":
-            # Bulk update
-            if item_id == "bulk":
-                try:
-                    updates = json.loads(body_data) if body_data else []
-                    updated_docs = []
-                    for item in updates:
-                        if not isinstance(item, dict) or "id" not in item:
-                            continue
-                        doc_id = item["id"]
-                        item.pop("_id", None)
-                        collection.update_one({"id": doc_id}, {"$set": item})
-                        updated = collection.find_one({"id": doc_id})
-                        if updated:
-                            updated_docs.append(serialize_doc(updated))
-                    return {"status": 200, "body": updated_docs}
-                except Exception as e:
-                    return {"status": 500, "body": {"error": str(e)}}
-
-            # Single update
-            elif item_id:
-                try:
-                    update_data = json.loads(body_data) if body_data else {}
-                    update_data.pop("_id", None)
-                    update_data.pop("id", None)
-                    collection.update_one({"id": item_id}, {"$set": update_data})
-                    updated = collection.find_one({"id": item_id})
-                    if not updated:
-                        return {"status": 404, "body": {"error": f"Item {item_id} not found in {entity}"}}
-                    return {"status": 200, "body": serialize_doc(updated)}
-                except Exception as e:
-                    return {"status": 500, "body": {"error": str(e)}}
-
-        # D. DELETE requests (Delete Single / Delete Many)
-        elif method == "DELETE":
-            # Delete single item
-            if item_id and item_id not in ("bulk", "update-many"):
-                res = collection.delete_one({"id": item_id})
-                if res.deleted_count == 0:
-                    collection.delete_one({"_id": item_id})
-                return {"status": 200, "body": {"ok": True}}
-
-            # Delete multiple matching filter (body data has ids or query filter)
-            else:
-                try:
-                    delete_filter = {}
-                    if body_data:
-                        body_json = json.loads(body_data)
-                        if isinstance(body_json, list):
-                            delete_filter = {"id": {"$in": body_json}}
-                        elif isinstance(body_json, dict):
-                            delete_filter = body_json
-                    collection.delete_many(delete_filter)
-                    return {"status": 200, "body": {"ok": True}}
-                except Exception as e:
-                    return {"status": 500, "body": {"error": str(e)}}
-
-        # E. PATCH requests (Update Many)
-        elif method == "PATCH":
-            if item_id == "update-many":
-                try:
-                    patch_data = json.loads(body_data) if body_data else {}
-                    filter_q = patch_data.get("query", {})
-                    update_val = patch_data.get("data", {})
-                    update_val.pop("_id", None)
-                    update_val.pop("id", None)
-
-                    collection.update_many(filter_q, {"$set": update_val})
-                    return {"status": 200, "body": {"ok": True}}
-                except Exception as e:
-                    return {"status": 500, "body": {"error": str(e)}}
+        import _entities
+        return _entities.handle(db, method, match.group(2), match.group(3), query_params or {}, body_data, headers)
 
     return None  # Path did not match any database endpoints
 
 
 def handle_db_request(method, path, query_params, body_data, headers):
-    response = _handle_db_request(method, path, query_params, body_data, headers)
+    try:
+        response = _handle_db_request(method, path, query_params, body_data, headers)
+    except PyMongoError as e:
+        print(f"[db] {method} {path}: {e}")
+        response = {"status": 503, "body": {"error": BUSY_MESSAGE}, "headers": {"Retry-After": "3"}}
     body = response.get("body") if response else None
     if response and response.get("status", 200) >= 400 and isinstance(body, dict) and body.get("error") and not body.get("message"):
         body["message"] = body["error"]  # the main site's SDK displays `message`

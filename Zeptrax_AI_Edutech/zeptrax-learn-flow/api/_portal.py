@@ -27,7 +27,6 @@ PROFILE_FIELDS = {
     "github": 200,
     "linkedin": 200,
 }
-MAX_BULK_INVITATIONS = 1000
 DAY = 24 * 60 * 60
 
 
@@ -100,11 +99,13 @@ def pending_filter(now):
 
 def program_titles(db):
     """slug -> title for every catalog program, including hidden ones (for display)"""
-    return {p["slug"]: p["title"] for p in db["CatalogProgram"].find({}, {"slug": 1, "title": 1})}
+    return core.cached("programs:titles", 60, lambda: {
+        p["slug"]: p["title"] for p in db["CatalogProgram"].find({}, {"slug": 1, "title": 1})})
 
 
 def choosable_programs(db):
-    return {p["slug"] for p in db["CatalogProgram"].find({"visible": True}, {"slug": 1})}
+    return core.cached("programs:visible", 60, lambda: {
+        p["slug"] for p in db["CatalogProgram"].find({"visible": True}, {"slug": 1})})
 
 
 def check_program(db, slug, required):
@@ -145,7 +146,7 @@ def update_profile(db, user, body):
     for field in ("github", "linkedin"):
         if updates.get(field) and not updates[field].startswith(("https://", "http://")):
             return error(400, f"{field.title()} must be a full link starting with https://")
-    if "program_slug" in data and user.get("role") == STUDENT:
+    if "program_slug" in data and user.get("role") == STUDENT and data["program_slug"] != user.get("program_slug"):
         slug, problem = check_program(db, data["program_slug"], required=True)
         if problem:
             return error(400, problem)
@@ -157,6 +158,7 @@ def update_profile(db, user, body):
     if updates:
         updates["updated_date"] = time.time()
         db["User"].update_one({"id": user["id"]}, {"$set": updates})
+        core.forget_user(user.get("token"))
     return get_me(db, db["User"].find_one({"id": user["id"]}))
 
 
@@ -304,39 +306,6 @@ def parse_int(value, default, low, high):
     return max(low, min(high, value))
 
 
-def bulk_student_invitations(db, user, body):
-    data = parse_body(body)
-    if data is None:
-        return error(400, "Invalid request")
-    university_id, problem = scope_university(db, user, data.get("university_id"))
-    if problem:
-        return problem
-    if not university_id:
-        return error(400, "Choose a university")
-    university = db["University"].find_one({"id": university_id})
-    if university.get("status") == "inactive":
-        return error(400, "This university is inactive")
-    try:
-        count = int(data.get("count"))
-    except (TypeError, ValueError):
-        return error(400, "Number of students must be a number")
-    if not 1 <= count <= MAX_BULK_INVITATIONS:
-        return error(400, f"Number of students must be between 1 and {MAX_BULK_INVITATIONS}")
-    expires_days = parse_int(data.get("expires_days"), 15, 1, 90)
-
-    limit = university.get("max_students")
-    if limit:
-        now = time.time()
-        registered = db["User"].count_documents({"university_id": university_id, "role": STUDENT})
-        pending = db["Invitation"].count_documents({"university_id": university_id, "role": STUDENT, **pending_filter(now)})
-        available = limit - registered - pending
-        if count > available:
-            return error(400, f"{university['name']} can onboard {limit} students: {registered} registered and {pending} invitations pending, so at most {max(available, 0)} more invitations can be created.")
-
-    return create_invitations(db, user, university, STUDENT, count, expires_days,
-                              clean(data.get("department"), 80), clean(data.get("batch"), 40))
-
-
 def admin_invitation(db, user, body):
     if not is_staff(user):
         return error(403, "Only Zeptrax staff can invite university admins")
@@ -346,6 +315,8 @@ def admin_invitation(db, user, body):
     university = db["University"].find_one({"id": data.get("university_id")})
     if not university:
         return error(404, "University not found")
+    if university.get("status") == "inactive":
+        return error(400, "This university is inactive. Make it active before inviting an admin.")
     expires_days = parse_int(data.get("expires_days"), 7, 1, 30)
     return create_invitations(db, user, university, UNIVERSITY_ADMIN, 1, expires_days)
 
@@ -475,7 +446,7 @@ def list_students(db, user, query_params):
             "university_id": s.get("university_id"), "university_name": names.get(s.get("university_id"), ""),
             "department": s.get("department", ""), "batch": s.get("batch", ""),
             "registration_number": s.get("registration_number", ""), "graduation_year": s.get("graduation_year", ""),
-            "phone": s.get("phone", ""), "status": s.get("status", "active"),
+            "phone": s.get("phone", ""), "degree": s.get("degree", ""), "status": s.get("status", "active"),
             "profile_completion": profile_completion(s), "created_at": s.get("created_at"),
             "program_slug": s.get("program_slug", ""), "program_title": titles.get(s.get("program_slug"), s.get("program_slug", "")),
         })
@@ -533,6 +504,8 @@ def overview(db, user):
             "students": db["User"].count_documents({"role": STUDENT}),
             "university_admins": db["User"].count_documents({"role": UNIVERSITY_ADMIN}),
             "pending_invitations": db["Invitation"].count_documents({"role": STUDENT, **pending_filter(now)}),
+            "active_links": db["InviteLink"].count_documents({"revoked": {"$ne": True}, "expires_at": {"$gt": now}}),
+            "inactive_students": db["User"].count_documents({"role": STUDENT, "status": "inactive"}),
         })
     if user.get("role") == UNIVERSITY_ADMIN:
         uid = user.get("university_id")
@@ -542,6 +515,7 @@ def overview(db, user):
             "max_students": uni.get("max_students"),
             "students": db["User"].count_documents({"university_id": uid, "role": STUDENT}),
             "pending_invitations": db["Invitation"].count_documents({"university_id": uid, "role": STUDENT, **pending_filter(now)}),
+            "active_links": db["InviteLink"].count_documents({"university_id": uid, "revoked": {"$ne": True}, "expires_at": {"$gt": now}}),
             "profiles_complete": db["User"].count_documents({"university_id": uid, "role": STUDENT, **{f: {"$nin": [None, ""]} for f in PROFILE_FIELDS}}),
         })
     return error(403, "Not allowed")
@@ -549,8 +523,14 @@ def overview(db, user):
 
 # ---------------------------------------------------------------- router
 
-def handle(db, method, path, query_params, body_data, user):
+def handle(db, method, path, query_params, body_data, user, headers=None):
     path = path.rstrip("/") or "/"
+    import _signup_links
+
+    # Public: shareable signup links
+    routed = _signup_links.handle_public(db, method, path, body_data, headers or {})
+    if routed is not None:
+        return routed
 
     # Public
     if path == "/invitations/validate" and method == "POST":
@@ -561,6 +541,10 @@ def handle(db, method, path, query_params, body_data, user):
     if not user:
         return error(401, "Please log in")
 
+    # A university admin account must belong to a university; without one it would see everything
+    if user.get("role") == UNIVERSITY_ADMIN and not user.get("university_id") and path != "/me":
+        return error(403, "Your account isn't linked to a university. Contact ZeptraAI.")
+
     if path == "/me" and method == "GET":
         return get_me(db, user)
     if path == "/me/profile" and method == "PUT":
@@ -568,7 +552,11 @@ def handle(db, method, path, query_params, body_data, user):
 
     if path == "/catalog" or path.startswith("/catalog/"):
         import _catalog
-        return _catalog.handle(db, method, path, body_data, user)
+        response = _catalog.handle(db, method, path, body_data, user)
+        if method != "GET":
+            core.uncache("programs:")
+            core.uncache("public_catalog")
+        return response
 
     import _assessments
     routed = _assessments.handle(db, method, path, query_params, body_data, user)
@@ -585,6 +573,9 @@ def handle(db, method, path, query_params, body_data, user):
     if not (is_staff(user) or user.get("role") == UNIVERSITY_ADMIN):
         return error(403, "Not allowed")
 
+    routed = _signup_links.handle_managers(db, method, path, query_params, body_data, user)
+    if routed is not None:
+        return routed
     if path == "/overview" and method == "GET":
         return overview(db, user)
     if path == "/universities" and method == "GET":
@@ -596,8 +587,6 @@ def handle(db, method, path, query_params, body_data, user):
         return save_university(db, user, body_data, match.group(1))
     if path == "/admin-invitations" and method == "POST":
         return admin_invitation(db, user, body_data)
-    if path == "/invitations/bulk" and method == "POST":
-        return bulk_student_invitations(db, user, body_data)
     if path == "/campaigns" and method == "GET":
         return list_campaigns(db, user, query_params)
     match = re.fullmatch(r"/campaigns/([\w-]+)/revoke", path)
@@ -607,4 +596,41 @@ def handle(db, method, path, query_params, body_data, user):
         return programs_overview(db, user)
     if path == "/students" and method == "GET":
         return list_students(db, user, query_params)
+    match = re.fullmatch(r"/accounts/([\w-]+)/status", path)
+    if match and method == "PUT":
+        return set_account_status(db, user, match.group(1), body_data)
+    match = re.fullmatch(r"/universities/([\w-]+)/admins", path)
+    if match and method == "GET":
+        return university_admins(db, user, match.group(1))
     return error(404, "Not found")
+
+
+def set_account_status(db, user, account_id, body):
+    """Deactivate or reactivate a student (staff, or their own university's admin) or a university admin (staff).
+    An inactive account can't sign in or use the API; its results and submissions are kept."""
+    data = parse_body(body) or {}
+    status = data.get("status")
+    if status not in ("active", "inactive"):
+        return error(400, "Status must be active or inactive")
+    account = db["User"].find_one({"id": account_id}, {"id": 1, "role": 1, "university_id": 1, "token": 1})
+    if not account or account.get("role") not in (STUDENT, UNIVERSITY_ADMIN):
+        return error(404, "Account not found")
+    if account["role"] == UNIVERSITY_ADMIN and not is_staff(user):
+        return error(403, "Only Zeptrax staff can change university admin accounts")
+    _, problem = scope_university(db, user, account.get("university_id"))
+    if problem:
+        return problem
+    if account["id"] == user.get("id"):
+        return error(400, "You can't deactivate your own account")
+    db["User"].update_one({"id": account_id}, {"$set": {"status": status, "status_changed_by": user.get("email"), "status_changed_at": time.time()}})
+    core.forget_user(account.get("token"))
+    return ok({"id": account_id, "status": status})
+
+
+def university_admins(db, user, university_id):
+    if not is_staff(user):
+        return error(403, "Only Zeptrax staff can see university admins")
+    admins = [{"id": a["id"], "name": a.get("full_name") or a.get("name") or "", "email": a.get("email", ""),
+               "status": a.get("status", "active"), "created_at": a.get("created_at")}
+              for a in db["User"].find({"role": UNIVERSITY_ADMIN, "university_id": university_id}).sort("created_at", 1)]
+    return ok({"admins": admins})

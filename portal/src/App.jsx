@@ -4,6 +4,7 @@ import { roleOf, useAuth } from "./auth.jsx";
 import { Loading } from "./components/ui.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
+import Join from "./pages/Join.jsx";
 import Overview from "./pages/Overview.jsx";
 import Universities from "./pages/Universities.jsx";
 import Invitations from "./pages/Invitations.jsx";
@@ -20,21 +21,19 @@ import TestEditor from "./pages/TestEditor.jsx";
 import Projects, { ProjectDetail, ProjectForm } from "./pages/Projects.jsx";
 import MyProjects, { MyProject } from "./pages/MyProjects.jsx";
 
+// Students and tests each live in one place; their pages are tabs inside it (see SECTIONS)
 const NAV = {
   staff: [
     { to: "/overview", label: "Overview" },
     { to: "/universities", label: "Universities" },
-    { to: "/invitations", label: "Invitations" },
-    { to: "/students", label: "Students" },
-    { to: "/manage-tests", label: "Tests" },
-    { to: "/results", label: "Test results" },
+    { to: "/students", label: "Students", section: "students" },
+    { to: "/manage-tests", label: "Tests", section: "tests" },
     { to: "/projects", label: "Projects" },
   ],
   university_admin: [
     { to: "/overview", label: "Overview" },
-    { to: "/students", label: "Students" },
-    { to: "/invitations", label: "Bulk invitations" },
-    { to: "/results", label: "Test results" },
+    { to: "/students", label: "Students", section: "students" },
+    { to: "/results", label: "Tests", section: "tests" },
     { to: "/projects", label: "Projects" },
   ],
   student: [
@@ -45,6 +44,45 @@ const NAV = {
   ],
   user: [{ to: "/home", label: "Home" }],
 };
+
+const SECTIONS = {
+  students: () => [
+    { to: "/students", label: "All students" },
+    { to: "/invitations", label: "Signup links" },
+  ],
+  tests: (role) => [
+    ...(role === "staff" ? [{ to: "/manage-tests", label: "Manage tests" }] : []),
+    { to: "/results", label: "Results" },
+  ],
+};
+
+function sectionOf(pathname) {
+  if (pathname.startsWith("/students") || pathname.startsWith("/invitations")) return "students";
+  if (pathname.startsWith("/manage-tests") || pathname.startsWith("/results") || /^\/tests\/[^/]+\/key/.test(pathname)) return "tests";
+  return null;
+}
+
+function SectionTabs({ role }) {
+  const { pathname } = useLocation();
+  const section = sectionOf(pathname);
+  const tabs = section ? SECTIONS[section](role) : [];
+  if (tabs.length < 2) return null;
+  return (
+    <nav className="mb-6 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-border" aria-label="Section">
+      {tabs.map((t) => (
+        <NavLink
+          key={t.to}
+          to={t.to}
+          className={({ isActive }) =>
+            `-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm ${isActive ? "border-primary font-medium text-white" : "border-transparent text-muted hover:text-slate-200"}`
+          }
+        >
+          {t.label}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
 
 const ROLE_LABEL = { staff: "Zeptrax admin", university_admin: "University admin", student: "Student", user: "Member" };
 
@@ -57,7 +95,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/register" element={<Register />} />
-      <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/join" element={<Join />} />
+      <Route path="/login" element={user ? <Navigate to={location.state?.from || "/"} replace /> : <Login />} />
       {/* The exam screen is full-width, without the sidebar */}
       <Route path="/tests/:id/take" element={user ? <TakeTest /> : <Navigate to="/login" replace />} />
       <Route path="/*" element={user ? <Shell /> : <Navigate to="/login" replace state={{ from: location.pathname }} />} />
@@ -72,6 +111,8 @@ function Shell() {
   const superAdmin = user.role === "super_admin";
   const nav = [...(NAV[role] || NAV.user), ...(superAdmin ? [{ to: "/catalog", label: "Website catalog" }] : [])];
   const manager = role === "staff" || role === "university_admin";
+  const { pathname } = useLocation();
+  const current = sectionOf(pathname);
 
   return (
     <div className="min-h-screen md:flex">
@@ -94,7 +135,7 @@ function Shell() {
               to={item.to}
               onClick={() => setMenuOpen(false)}
               className={({ isActive }) =>
-                `block rounded-lg px-3 py-2 text-sm ${isActive ? "bg-primary/10 font-medium text-blue-300" : "text-slate-300 hover:bg-white/5"}`
+                `block rounded-lg px-3 py-2 text-sm ${isActive || (item.section && item.section === current) ? "bg-primary/10 font-medium text-blue-300" : "text-slate-300 hover:bg-white/5"}`
               }
             >
               {item.label}
@@ -114,6 +155,7 @@ function Shell() {
         </nav>
       </aside>
       <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">
+        {manager && <SectionTabs role={role} />}
         <Routes>
           {manager && <Route path="/overview" element={<Overview />} />}
           {manager && <Route path="/students" element={<Students />} />}

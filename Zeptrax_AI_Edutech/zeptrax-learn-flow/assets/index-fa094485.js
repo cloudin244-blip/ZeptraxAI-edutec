@@ -18684,6 +18684,10 @@ const BF = P.createContext(),
                 try {
                     a(!0);
                     const A = await ve.auth.me();
+                    if (zptStudentBlocked(A)) {
+                        window.location.replace(ZPT_PORTAL_HOME);
+                        return
+                    }
                     n(A), i(!0), a(!1), p(!0)
                 } catch (A) {
                     console.error("User auth check failed:", A), a(!1), i(!1), p(!0), (A.status === 401 || A.status === 403) && f({
@@ -24852,7 +24856,15 @@ function zptIsAdmin(e) {
     return !!e && (e.email === Loe || e.role === "admin" || e.role === "super_admin")
 }
 
+// Students use the University Portal only (dashboard, tests, projects, profile)
+const ZPT_PORTAL_HOME = "/portal/#/home";
+
+function zptStudentBlocked(e) {
+    return !!e && e.role === "student" && /^\/(dashboard|courses|learn|community|refer-and-earn|resources|more|schedule-class|write-blog)(\/|$)/.test(window.location.pathname)
+}
+
 function zptAfterLogin(e) {
+    if (e && e.role === "student") return ZPT_PORTAL_HOME;
     let t = null;
     try {
         t = new URLSearchParams(window.location.search).get("from_url")
@@ -26343,41 +26355,6 @@ function iae() {
                         className: "w-4 h-4 animate-spin mr-2"
                     }) : null, "Sign In"]
                 })]
-            }), m.jsxs("div", {
-                className: "relative my-6",
-                children: [m.jsx("div", {
-                    className: "absolute inset-0 flex items-center",
-                    children: m.jsx("div", {
-                        className: "w-full border-t border-border/50"
-                    })
-                }), m.jsx("div", {
-                    className: "relative flex justify-center",
-                    children: m.jsx("span", {
-                        className: "bg-background px-3 text-xs text-muted-foreground",
-                        children: "or"
-                    })
-                })]
-            }), m.jsxs(ct, {
-                onClick: u,
-                variant: "outline",
-                className: "w-full border-border/50 h-11 text-sm",
-                children: [m.jsxs("svg", {
-                    className: "w-4 h-4 mr-2",
-                    viewBox: "0 0 24 24",
-                    children: [m.jsx("path", {
-                        d: "M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z",
-                        fill: "#4285F4"
-                    }), m.jsx("path", {
-                        d: "M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z",
-                        fill: "#34A853"
-                    }), m.jsx("path", {
-                        d: "M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z",
-                        fill: "#FBBC05"
-                    }), m.jsx("path", {
-                        d: "M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z",
-                        fill: "#EA4335"
-                    })]
-                }), "Continue with Google"]
             }), m.jsxs("p", {
                 className: "text-center text-sm text-muted-foreground mt-6",
                 children: ["Don't have an account? ", m.jsx(Ie, {
@@ -26402,10 +26379,16 @@ function oae() {
         }
         d(!0);
         try {
-            await ve.auth.register({
+            const zr = await ve.auth.register({
                 email: n,
                 password: i
-            }), t("otp")
+            });
+            // No verification email on this server: the account is ready, sign straight in
+            if (zr && zr.access_token && zr.user && zr.user.verified) {
+                ve.auth.setToken(zr.access_token), window.location.href = zptAfterLogin(zr.user);
+                return
+            }
+            t("otp")
         } catch (A) {
             g(A.message || "Registration failed")
         }
@@ -26506,89 +26489,6 @@ function oae() {
                         children: [f ? m.jsx(kn, {
                             className: "w-4 h-4 animate-spin mr-2"
                         }) : null, "Create Account"]
-                    })]
-                }), m.jsxs("div", {
-                    className: "relative my-6",
-                    children: [m.jsx("div", {
-                        className: "absolute inset-0 flex items-center",
-                        children: m.jsx("div", {
-                            className: "w-full border-t border-border/50"
-                        })
-                    }), m.jsx("div", {
-                        className: "relative flex justify-center",
-                        children: m.jsx("span", {
-                            className: "bg-background px-3 text-xs text-muted-foreground",
-                            children: "or"
-                        })
-                    })]
-                }), m.jsxs("div", {
-                    className: "space-y-2",
-                    children: [m.jsxs(ct, {
-                        onClick: b,
-                        variant: "outline",
-                        className: "w-full border-border/50 h-11 text-sm",
-                        children: [m.jsxs("svg", {
-                            className: "w-4 h-4 mr-2",
-                            viewBox: "0 0 24 24",
-                            children: [m.jsx("path", {
-                                d: "M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z",
-                                fill: "#4285F4"
-                            }), m.jsx("path", {
-                                d: "M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z",
-                                fill: "#34A853"
-                            }), m.jsx("path", {
-                                d: "M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z",
-                                fill: "#FBBC05"
-                            }), m.jsx("path", {
-                                d: "M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z",
-                                fill: "#EA4335"
-                            })]
-                        }), "Continue with Google"]
-                    }), m.jsxs(ct, {
-                        onClick: w,
-                        variant: "outline",
-                        className: "w-full border-border/50 h-11 text-sm",
-                        children: [m.jsx("span", {
-                            className: "w-5 h-5 rounded-full bg-muted/50 flex items-center justify-center mr-2 shrink-0",
-                            children: m.jsx("svg", {
-                                className: "w-4 h-4 text-[#24292F]",
-                                viewBox: "0 0 24 24",
-                                fill: "currentColor",
-                                children: m.jsx("path", {
-                                    d: "M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.38.6.11.82-.26.82-.58v-2.02c-3.34.72-4.04-1.61-4.04-1.61-.54-1.38-1.33-1.75-1.33-1.75-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.23 1.84 1.23 1.07 1.84 2.81 1.31 3.49 1 .11-.77.42-1.31.76-1.61-2.66-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.17 0 0 1.01-.32 3.3 1.23A11.5 11.5 0 0 1 12 5.8c1.02 0 2.05.14 3.01.4 2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.17.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.62-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.69.83.58C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0Z"
-                                })
-                            })
-                        }), "Continue with GitHub"]
-                    }), m.jsxs(ct, {
-                        onClick: A,
-                        variant: "outline",
-                        className: "w-full border-border/50 h-11 text-sm",
-                        children: [m.jsx("span", {
-                            className: "w-5 h-5 rounded-full bg-[#1877F2]/10 flex items-center justify-center mr-2 shrink-0",
-                            children: m.jsx("svg", {
-                                className: "w-4 h-4 text-[#1877F2]",
-                                viewBox: "0 0 24 24",
-                                fill: "currentColor",
-                                children: m.jsx("path", {
-                                    d: "M13.5 2.5c-1.1 0-2 .9-2 2v3.4c0 1.1.9 2 2 2s2-.9 2-2V4.5c0-1.1-.9-2-2-2Zm0 12.1c-1.1 0-2 .9-2 2v3.4c0 1.1.9 2 2 2s2-.9 2-2v-3.4c0-1.1-.9-2-2-2Z"
-                                })
-                            })
-                        }), "Continue with Facebook"]
-                    }), m.jsxs(ct, {
-                        onClick: C,
-                        variant: "outline",
-                        className: "w-full border-border/50 h-11 text-sm",
-                        children: [m.jsx("span", {
-                            className: "w-5 h-5 rounded-full bg-[#0A66C2]/10 flex items-center justify-center mr-2 shrink-0",
-                            children: m.jsx("svg", {
-                                className: "w-4 h-4 text-[#0A66C2]",
-                                viewBox: "0 0 24 24",
-                                fill: "currentColor",
-                                children: m.jsx("path", {
-                                    d: "M6.94 8.5A1.56 1.56 0 1 0 6.94 11.62a1.56 1.56 0 0 0 0-3.12Zm-2.38 2.5h2.38V18H4.56V11Zm4.5 0h2.29v.9h.03c.32-.6 1.1-1.24 2.27-1.24 2.43 0 2.88 1.6 2.88 3.68V18h-2.38v-5.78c0-1.38-.03-3.16-1.93-3.16-1.93 0-2.22 1.51-2.22 3.06V18H9.06V11Z"
-                                })
-                            })
-                        }), "Continue with LinkedIn"]
                     })]
                 }), m.jsxs("p", {
                     className: "text-center text-sm text-muted-foreground mt-6",

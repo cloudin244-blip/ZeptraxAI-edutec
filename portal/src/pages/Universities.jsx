@@ -7,6 +7,10 @@ export default function Universities() {
   const [data, error, reload] = useLoad(() => portal.get("/universities"), []);
   const [editing, setEditing] = useState(null); // {} for new, university for edit
   const [inviting, setInviting] = useState(null);
+  const [viewingAdmins, setViewingAdmins] = useState(null);
+  const [search, setSearch] = useState("");
+  const q = search.trim().toLowerCase();
+  const rows = (data?.universities || []).filter((u) => !q || u.name.toLowerCase().includes(q) || u.code.toLowerCase().includes(q));
 
   const columns = [
     {
@@ -21,16 +25,28 @@ export default function Universities() {
     },
     { key: "status", label: "Status", render: (u) => <Badge tone={u.status === "active" ? "green" : "red"}>{u.status}</Badge> },
     { key: "students", label: "Students", render: (u) => `${u.students}${u.max_students ? ` / ${u.max_students}` : ""}` },
-    { key: "pending_invitations", label: "Pending invites", render: (u) => u.pending_invitations },
-    { key: "admins", label: "Admins", render: (u) => u.admins },
+    {
+      key: "admins",
+      label: "Admins",
+      render: (u) =>
+        u.admins ? (
+          <button className="text-primary hover:underline" onClick={() => setViewingAdmins(u)}>
+            {u.admins} admin{u.admins === 1 ? "" : "s"}
+          </button>
+        ) : (
+          <span className="text-muted">None yet</span>
+        ),
+    },
     {
       key: "actions",
       label: "",
       render: (u) => (
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setInviting(u)}>
-            Invite admin
-          </Button>
+          {u.status === "active" && (
+            <Button variant="secondary" onClick={() => setInviting(u)}>
+              Invite admin
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => setEditing(u)}>
             Edit
           </Button>
@@ -42,8 +58,13 @@ export default function Universities() {
   return (
     <>
       <PageHeader title="Universities" description="Universities on the portal, their student limits and admins." action={<Button onClick={() => setEditing({})}>Add university</Button>} />
+      {(data?.universities.length || 0) > 5 && (
+        <div className="mb-4 max-w-xs">
+          <input className="input" placeholder="Search name or code" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search universities" />
+        </div>
+      )}
       <ErrorText>{error}</ErrorText>
-      <Card>{data ? <Table columns={columns} rows={data.universities} empty="No universities yet. Add the first one." /> : !error && <Loading />}</Card>
+      <Card>{data ? <Table columns={columns} rows={rows} empty={q ? "No university matches." : "No universities yet. Add the first one."} /> : !error && <Loading />}</Card>
       {editing && (
         <UniversityForm
           university={editing}
@@ -55,6 +76,7 @@ export default function Universities() {
         />
       )}
       {inviting && <AdminInvite university={inviting} onClose={() => setInviting(null)} />}
+      {viewingAdmins && <AdminsModal university={viewingAdmins} onClose={() => setViewingAdmins(null)} onChanged={reload} />}
     </>
   );
 }
@@ -92,15 +114,15 @@ function UniversityForm({ university, onClose, onSaved }) {
           <input className="input" required value={form.name} onChange={set("name")} placeholder="Mewar University" />
         </Field>
         {isNew && (
-          <Field label="Short code" hint="2–8 letters or digits. Appears in invitation codes, e.g. ZP-MEW-…">
+          <Field label="Short code" hint="2–8 letters or digits. Appears in signup link codes, e.g. MEW-…">
             <input className="input uppercase" required value={form.code} onChange={set("code")} placeholder="MEW" maxLength={8} />
           </Field>
         )}
-        <Field label="Maximum students" hint="Leave empty for no limit. Pending invitations count towards the limit.">
+        <Field label="Maximum students" hint="Leave empty for no limit. Once this many students have joined, the signup link stops accepting new ones.">
           <input className="input" type="number" min={1} value={form.max_students} onChange={set("max_students")} placeholder="500" />
         </Field>
         {!isNew && (
-          <Field label="Status" hint="Inactive universities can't create invitations, and their invitation links stop working.">
+          <Field label="Status" hint="Inactive universities can't add students: their signup links and invitations stop working.">
             <select className="input" value={form.status} onChange={set("status")}>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
@@ -117,6 +139,52 @@ function UniversityForm({ university, onClose, onSaved }) {
           </Button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function AdminsModal({ university, onClose, onChanged }) {
+  const [data, error, reload] = useLoad(() => portal.get(`/universities/${university.id}/admins`), [university.id]);
+  const [busy, setBusy] = useState("");
+  const [problem, setProblem] = useState("");
+
+  const toggle = async (a) => {
+    const next = a.status === "inactive" ? "active" : "inactive";
+    if (next === "inactive" && !window.confirm(`Deactivate ${a.name || a.email}? They won't be able to sign in until you reactivate them.`)) return;
+    setBusy(a.id);
+    setProblem("");
+    try {
+      await portal.put(`/accounts/${a.id}/status`, { status: next });
+      reload();
+      onChanged();
+    } catch (err) {
+      setProblem(err.message);
+    }
+    setBusy("");
+  };
+
+  return (
+    <Modal title={`${university.name}: admins`} onClose={onClose}>
+      <ErrorText>{error || problem}</ErrorText>
+      {!data && !error && <Loading />}
+      {data && (
+        <ul className="divide-y divide-border text-sm">
+          {data.admins.map((a) => (
+            <li key={a.id} className="flex items-center justify-between gap-3 py-3">
+              <div className="min-w-0">
+                <p className="truncate font-medium">{a.name || "–"}</p>
+                <p className="truncate text-xs text-muted">{a.email}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {a.status === "inactive" && <Badge tone="red">Deactivated</Badge>}
+                <Button variant={a.status === "inactive" ? "secondary" : "danger"} loading={busy === a.id} onClick={() => toggle(a)}>
+                  {a.status === "inactive" ? "Reactivate" : "Deactivate"}
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </Modal>
   );
 }

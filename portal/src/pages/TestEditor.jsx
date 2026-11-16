@@ -12,6 +12,7 @@ export default function TestEditor() {
   const [editing, setEditing] = useState(null); // {} = new question
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [settingsDirty, setSettingsDirty] = useState(false);
 
   const test = tests?.assessments.find((t) => t.id === id);
   if (testsError || keyError) return <ErrorText>{testsError || keyError}</ErrorText>;
@@ -55,6 +56,8 @@ export default function TestEditor() {
             </Link>
             <Button
               loading={busy === "status"}
+              disabled={settingsDirty}
+              title={settingsDirty ? "Save or undo your settings changes first" : undefined}
               variant={test.status === "published" ? "secondary" : "primary"}
               onClick={() => run("status", () => portal.put(`/assessments/${id}`, { status: test.status === "published" ? "draft" : "published" }))}
             >
@@ -64,6 +67,11 @@ export default function TestEditor() {
         }
       />
       <ErrorText>{error}</ErrorText>
+      {settingsDirty && (
+        <div className="mb-4">
+          <Notice>You have unsaved settings below. Save them before publishing, so students get the test as you set it up.</Notice>
+        </div>
+      )}
       {locked && (
         <div className="mb-4">
           <Notice>
@@ -72,7 +80,7 @@ export default function TestEditor() {
           </Notice>
         </div>
       )}
-      <Settings test={test} universities={universities?.universities || []} locked={locked} onSaved={reloadTests} />
+      <Settings test={test} universities={universities?.universities || []} locked={locked} onSaved={reloadTests} onDirtyChange={setSettingsDirty} />
 
       <div className="mb-3 mt-8 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Questions</h2>
@@ -155,12 +163,19 @@ export default function TestEditor() {
   );
 }
 
-function Settings({ test, universities, locked, onSaved }) {
+const SETTING_KEYS = ["title", "description", "duration_minutes", "marks_per_question", "negative_marks", "required", "show_score_to_students",
+  "audience", "university_ids", "proctoring", "warning_limit"];
+const settingsOf = (t) => JSON.stringify(SETTING_KEYS.map((k) => (Array.isArray(t[k]) ? [...t[k]].sort() : String(t[k] ?? ""))));
+
+function Settings({ test, universities, locked, onSaved, onDirtyChange }) {
   const [form, setForm] = useState(test);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => setForm(test), [test]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setForm(test), [test.id]);
+  const dirty = settingsOf(form) !== settingsOf(test);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   const set = (k, v) => {
     setSaved(false);
     setForm({ ...form, [k]: v });
@@ -172,6 +187,7 @@ function Settings({ test, universities, locked, onSaved }) {
     const body = {
       title: form.title, description: form.description, duration_minutes: form.duration_minutes, required: form.required,
       show_score_to_students: form.show_score_to_students, audience: form.audience, university_ids: form.university_ids,
+      proctoring: form.proctoring, warning_limit: form.warning_limit,
       ...(locked ? {} : { marks_per_question: form.marks_per_question, negative_marks: form.negative_marks }),
     };
     try {
@@ -212,6 +228,22 @@ function Settings({ test, universities, locked, onSaved }) {
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={form.show_score_to_students} onChange={(e) => set("show_score_to_students", e.target.checked)} /> Show students their score
           </label>
+        </div>
+        <div className="rounded-lg border border-border p-4">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={form.proctoring} onChange={(e) => set("proctoring", e.target.checked)} /> Camera proctoring
+          </label>
+          <p className="mt-1 text-xs text-muted">
+            Students need a camera and full screen. A phone or another person on camera submits the test at once as malpractice; leaving the tab, full screen or
+            the camera's view counts as a warning.
+          </p>
+          {form.proctoring && (
+            <div className="mt-3 max-w-xs">
+              <Field label="Auto-submit as malpractice after this many warnings">
+                <input className="input" type="number" min={1} max={20} required value={form.warning_limit} onChange={(e) => set("warning_limit", e.target.value)} />
+              </Field>
+            </div>
+          )}
         </div>
         <Field label="Who takes this test">
           <select className="input max-w-xs" value={form.audience} onChange={(e) => set("audience", e.target.value)}>
