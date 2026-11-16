@@ -42,7 +42,7 @@ except ImportError:  # pymongo missing: the API serves static fallbacks only
         pass
 
 # Bump when INDEXES changes: each new server instance then builds the indexes once
-INDEX_VERSION = 2
+INDEX_VERSION = 3
 
 # (collection, keys, options). Lookups that run on every request or every exam answer must be indexed,
 # otherwise each one scans the whole collection and the database falls over under exam-day load.
@@ -76,7 +76,7 @@ INDEXES = [
     ("AssessmentAttempt", [("assessment_id", 1), ("user_id", 1)], {"unique": True}),
     ("AssessmentAttempt", "id", {}),
     ("AssessmentAttempt", [("assessment_id", 1), ("university_id", 1), ("status", 1)], {}),
-    ("CatalogProgram", "slug", {}),
+    ("CatalogProgram", "slug", {"unique": True}),  # same as scripts/seed_catalog.py
     ("CatalogProgram", [("visible", 1), ("order", 1)], {}),
     ("PortalProject", "id", {}),
     ("ProjectSubmission", [("project_id", 1), ("user_id", 1)], {"unique": True}),
