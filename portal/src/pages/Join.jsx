@@ -34,7 +34,6 @@ export default function Join() {
     email: "",
     phone: "",
     registration_number: "",
-    university_id: "",
     degree: "",
     department: "",
     graduation_year: "",
@@ -87,7 +86,7 @@ export default function Join() {
     }
   };
 
-  const where = link.university?.name || "your university";
+  const where = link.university.name;
   const subtitle = link.test
     ? `Register with your ${where} details. Right after signing up you'll start "${link.test.title}".`
     : `Register with your ${where} details to join the ZeptraAI University Portal.`;
@@ -137,18 +136,7 @@ export default function Join() {
           <legend className="mb-3 text-xs font-semibold uppercase tracking-wider text-accent">Your university</legend>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="University">
-              {link.university ? (
-                <input className="input opacity-60" value={link.university.name} disabled />
-              ) : (
-                <select className="input" required value={form.university_id} onChange={set("university_id")}>
-                  <option value="">Choose your university</option>
-                  {(link.universities || []).map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <input className="input opacity-60" value={link.university.name} disabled />
             </Field>
             <Field label="Degree">
               <input className="input" required list="join-degrees" maxLength={60} value={form.degree} onChange={set("degree")} placeholder="e.g. B.Tech" />

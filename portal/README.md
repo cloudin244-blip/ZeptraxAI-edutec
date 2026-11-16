@@ -12,15 +12,15 @@ coordinators and Zeptrax staff use it for university onboarding, invitation link
 
 ## Signup links (how students join)
 
-Staff and university admins open **Signup links → Create signup link**. One link serves a whole class:
-share it on WhatsApp or email (`/portal/#/join?code=...`). Each student fills in name, email, phone,
-registration/roll number, university (fixed by the link, or chosen by the student), degree, branch,
-graduation year, Masters program and a password, and lands on the test's start screen. There is no
-Google / social sign-in anywhere on the site.
+Staff and university admins open **Signup links → Create signup link** and pick a university (university
+admins always get their own). That one link is shared with all the university's students on WhatsApp or
+email (`/portal/#/join?code=...`); nothing is generated per student. Each student fills in name, email,
+phone, registration/roll number, degree, branch, graduation year, Masters program and a password, joins
+that university and lands on the test's start screen. There is no Google / social sign-in anywhere.
 
-A link can fix the branch and batch, choose the test students are sent to (default: their required
-test), cap the number of signups, and be turned off at any time. The older single-use CSV links are
-still available below it. Backend: `api/_signup_links.py`.
+How many students can join is the university's **student limit** (Universities page); leave it empty for
+no limit. A link can also fix the branch and batch, choose the test students are sent to (default: their
+required test), expire, and be turned off. Backend: `api/_signup_links.py`.
 
 ## Running under heavy load
 

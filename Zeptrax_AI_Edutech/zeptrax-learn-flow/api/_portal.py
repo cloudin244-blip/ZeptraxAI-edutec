@@ -27,7 +27,6 @@ PROFILE_FIELDS = {
     "github": 200,
     "linkedin": 200,
 }
-MAX_BULK_INVITATIONS = 1000
 DAY = 24 * 60 * 60
 
 
@@ -307,39 +306,6 @@ def parse_int(value, default, low, high):
     return max(low, min(high, value))
 
 
-def bulk_student_invitations(db, user, body):
-    data = parse_body(body)
-    if data is None:
-        return error(400, "Invalid request")
-    university_id, problem = scope_university(db, user, data.get("university_id"))
-    if problem:
-        return problem
-    if not university_id:
-        return error(400, "Choose a university")
-    university = db["University"].find_one({"id": university_id})
-    if university.get("status") == "inactive":
-        return error(400, "This university is inactive")
-    try:
-        count = int(data.get("count"))
-    except (TypeError, ValueError):
-        return error(400, "Number of students must be a number")
-    if not 1 <= count <= MAX_BULK_INVITATIONS:
-        return error(400, f"Number of students must be between 1 and {MAX_BULK_INVITATIONS}")
-    expires_days = parse_int(data.get("expires_days"), 15, 1, 90)
-
-    limit = university.get("max_students")
-    if limit:
-        now = time.time()
-        registered = db["User"].count_documents({"university_id": university_id, "role": STUDENT})
-        pending = db["Invitation"].count_documents({"university_id": university_id, "role": STUDENT, **pending_filter(now)})
-        available = limit - registered - pending
-        if count > available:
-            return error(400, f"{university['name']} can onboard {limit} students: {registered} registered and {pending} invitations pending, so at most {max(available, 0)} more invitations can be created.")
-
-    return create_invitations(db, user, university, STUDENT, count, expires_days,
-                              clean(data.get("department"), 80), clean(data.get("batch"), 40))
-
-
 def admin_invitation(db, user, body):
     if not is_staff(user):
         return error(403, "Only Zeptrax staff can invite university admins")
@@ -451,7 +417,6 @@ def save_university(db, user, body, university_id=None):
         uni = {"id": str(uuid.uuid4()), "code": code, "status": "active", "max_students": None,
                "created_by": user.get("email"), "created_at": time.time(), **updates}
         db["University"].insert_one(uni)
-    core.uncache("active_universities")
     uni = core.serialize_doc(uni)
     uni.pop("_id", None)
     return ok({"university": uni}, 200 if university_id else 201)
@@ -613,8 +578,6 @@ def handle(db, method, path, query_params, body_data, user, headers=None):
         return save_university(db, user, body_data, match.group(1))
     if path == "/admin-invitations" and method == "POST":
         return admin_invitation(db, user, body_data)
-    if path == "/invitations/bulk" and method == "POST":
-        return bulk_student_invitations(db, user, body_data)
     if path == "/campaigns" and method == "GET":
         return list_campaigns(db, user, query_params)
     match = re.fullmatch(r"/campaigns/([\w-]+)/revoke", path)

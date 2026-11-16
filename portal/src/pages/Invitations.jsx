@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { portal, query } from "../api.js";
 import { roleOf, useAuth } from "../auth.jsx";
-import { Badge, Button, Card, ErrorText, Field, formatDate, Loading, Modal, Notice, PageHeader, Table, useLoad } from "../components/ui.jsx";
+import { Badge, Button, Card, ErrorText, formatDate, PageHeader, Table, useLoad } from "../components/ui.jsx";
 import SignupLinks from "./SignupLinks.jsx";
 
 export const inviteLink = (token) => `${window.location.origin}/portal/#/register?token=${encodeURIComponent(token)}`;
@@ -23,11 +23,10 @@ export default function Invitations() {
   const [universityId, setUniversityId] = useState("");
   const [universities] = useLoad(() => (staff ? portal.get("/universities") : Promise.resolve(null)), [staff]);
   const [data, error, reload] = useLoad(() => portal.get(`/campaigns${query({ university_id: universityId })}`), [universityId]);
-  const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState("");
 
   const revoke = async (campaign) => {
-    if (!window.confirm(`Cancel the ${campaign.pending} unused links in this batch? Students who already registered are not affected.`)) return;
+    if (!window.confirm(`Cancel the ${campaign.pending} unused invitations? People who already registered are not affected.`)) return;
     setRevoking(campaign.id);
     try {
       await portal.post(`/campaigns/${campaign.id}/revoke`);
@@ -86,134 +85,19 @@ export default function Invitations() {
         </div>
       )}
       <SignupLinks staff={staff} universities={universities?.universities || []} universityId={universityId} />
-      <section>
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Single-use invitation links</h2>
-            <p className="text-sm text-muted">
-              A personal link per student, usable once. Links are only shown when you create them, so download the CSV straight away.
-            </p>
-          </div>
-          <Button variant="secondary" onClick={() => setCreating(true)}>
-            Generate single-use links
-          </Button>
-        </div>
-        <ErrorText>{error}</ErrorText>
-        <Card>{data ? <Table columns={columns} rows={data.campaigns} empty="No single-use invitations yet." /> : !error && <Loading />}</Card>
-      </section>
-      {creating && (
-        <BulkForm
-          staff={staff}
-          universities={universities?.universities || []}
-          defaultUniversity={universityId}
-          onClose={() => setCreating(false)}
-          onCreated={reload}
-        />
+      {/* Coordinator invitations (sent from Universities) and personal links sent out earlier; none are created here any more */}
+      <ErrorText>{error}</ErrorText>
+      {data?.campaigns?.length > 0 && (
+        <section>
+          <h2 className="text-lg font-semibold">Personal invitations</h2>
+          <p className="mb-3 text-sm text-muted">
+            Single-use invitations already sent, such as coordinator invitations from the Universities page. You can cancel the unused ones.
+          </p>
+          <Card>
+            <Table columns={columns} rows={data.campaigns} empty="" />
+          </Card>
+        </section>
       )}
     </>
-  );
-}
-
-function BulkForm({ staff, universities, defaultUniversity, onClose, onCreated }) {
-  const { user } = useAuth();
-  const [form, setForm] = useState({ university_id: defaultUniversity || "", department: "", batch: "", count: 50, expires_days: 15 });
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const body = { ...form, count: Number(form.count), expires_days: Number(form.expires_days) };
-      if (!staff) delete body.university_id;
-      const res = await portal.post("/invitations/bulk", body);
-      setResult(res);
-      onCreated();
-    } catch (err) {
-      setError(err.message);
-    }
-    setBusy(false);
-  };
-
-  const download = () => {
-    const c = result.campaign;
-    const uni = universities.find((u) => u.id === c.university_id)?.name || user?.university?.name || "";
-    const rows = [["#", "Invitation link", "Code", "University", "Department", "Batch", "Expires"]];
-    result.tokens.forEach((t, i) => rows.push([i + 1, inviteLink(t), t, uni, c.department, c.batch, formatDate(c.expires_at)]));
-    const slug = [c.department, c.batch].filter(Boolean).join("-").replace(/[^\w-]+/g, "_") || "students";
-    downloadCsv(`zeptra-invitations-${slug}.csv`, rows);
-  };
-
-  if (result) {
-    return (
-      <Modal title="Invitations created" onClose={onClose}>
-        <div className="space-y-4">
-          <Notice>
-            {result.tokens.length} single-use links were created. Download them now: for security the portal keeps only a one-way fingerprint of each link, so they can't be shown again.
-          </Notice>
-          <div className="max-h-40 overflow-y-auto rounded-lg border border-border bg-background p-3 font-mono text-xs text-slate-300">
-            {result.tokens.slice(0, 5).map((t) => (
-              <p key={t} className="truncate">
-                {inviteLink(t)}
-              </p>
-            ))}
-            {result.tokens.length > 5 && <p className="text-muted">…and {result.tokens.length - 5} more in the CSV</p>}
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={onClose}>
-              Close
-            </Button>
-            <Button onClick={download}>Download CSV</Button>
-          </div>
-        </div>
-      </Modal>
-    );
-  }
-
-  return (
-    <Modal title="Generate student invitations" onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
-        {staff && (
-          <Field label="University">
-            <select className="input" required value={form.university_id} onChange={set("university_id")}>
-              <option value="">Choose a university</option>
-              {universities
-                .filter((u) => u.status === "active")
-                .map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-            </select>
-          </Field>
-        )}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Department">
-            <input className="input" value={form.department} onChange={set("department")} placeholder="Computer Science" />
-          </Field>
-          <Field label="Batch">
-            <input className="input" value={form.batch} onChange={set("batch")} placeholder="2023–2027" />
-          </Field>
-          <Field label="Number of students" hint="Up to 1000 per batch">
-            <input className="input" type="number" min={1} max={1000} required value={form.count} onChange={set("count")} />
-          </Field>
-          <Field label="Links expire after (days)">
-            <input className="input" type="number" min={1} max={90} required value={form.expires_days} onChange={set("expires_days")} />
-          </Field>
-        </div>
-        <ErrorText>{error}</ErrorText>
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" type="button" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" loading={busy}>
-            Generate {form.count || ""} links
-          </Button>
-        </div>
-      </form>
-    </Modal>
   );
 }

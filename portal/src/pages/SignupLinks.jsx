@@ -7,7 +7,6 @@ export const joinLink = (code) => `${window.location.origin}/portal/#/join?code=
 const STATUS = {
   active: ["green", "Active"],
   expired: ["neutral", "Expired"],
-  full: ["amber", "Limit reached"],
   revoked: ["red", "Revoked"],
 };
 
@@ -16,7 +15,7 @@ function shareText(link) {
   return `Use this link to ${what}: ${joinLink(link.code)}`;
 }
 
-// One link for a whole class: each student fills in their own details and is sent to the test
+// One link per university: every student of that university uses it, up to the university's student limit
 export default function SignupLinks({ staff, universities, universityId }) {
   const [data, error, reload] = useLoad(() => portal.get(`/invite-links${query({ university_id: universityId })}`), [universityId]);
   const [creating, setCreating] = useState(false);
@@ -61,7 +60,17 @@ export default function SignupLinks({ staff, universities, universityId }) {
       ),
     },
     { key: "test", label: "Test after signup", render: (l) => (l.test ? l.test.title : <span className="text-muted">Required test</span>) },
-    { key: "signups", label: "Signups", render: (l) => `${l.signups}${l.max_uses ? ` / ${l.max_uses}` : ""}` },
+    { key: "signups", label: "Joined", render: (l) => l.signups },
+    {
+      key: "university_students",
+      label: "Students / limit",
+      render: (l) => (
+        <span title="All students of this university on the portal, against its student limit (set on the Universities page)">
+          {l.university_students}
+          {l.university_limit ? ` / ${l.university_limit}` : <span className="text-muted"> (no limit)</span>}
+        </span>
+      ),
+    },
     {
       key: "status",
       label: "Status",
@@ -90,8 +99,8 @@ export default function SignupLinks({ staff, universities, universityId }) {
         <div>
           <h2 className="text-lg font-semibold">Shareable signup links</h2>
           <p className="text-sm text-muted">
-            One link for a whole class. Share it on WhatsApp or email; each student signs up with their own name, email, phone, branch and roll number, then goes
-            straight to the test.
+            One link per university, shared with all its students on WhatsApp or email. Each student signs up with their own details and goes
+            straight to the test. How many can join is the university's student limit.
           </p>
         </div>
         <Button className="shrink-0 whitespace-nowrap" onClick={() => setCreating(true)}>
@@ -145,7 +154,6 @@ function CreateLinkForm({ staff, universities, defaultUniversity, onClose, onCre
     department: "",
     batch: "",
     assessment_id: "",
-    max_uses: "",
     expires_days: 30,
   });
   const [error, setError] = useState("");
@@ -157,7 +165,7 @@ function CreateLinkForm({ staff, universities, defaultUniversity, onClose, onCre
     setBusy(true);
     setError("");
     try {
-      const body = { ...form, max_uses: form.max_uses ? Number(form.max_uses) : null, expires_days: Number(form.expires_days) };
+      const body = { ...form, expires_days: Number(form.expires_days) };
       if (!staff) delete body.university_id;
       const { link } = await portal.post("/invite-links", body);
       onCreated(link);
@@ -173,9 +181,9 @@ function CreateLinkForm({ staff, universities, defaultUniversity, onClose, onCre
     <Modal title="Create signup link" onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         {staff && (
-          <Field label="University" hint="“Students choose” lets one link serve several universities.">
-            <select className="input" value={form.university_id} onChange={set("university_id")}>
-              <option value="">Students choose their university</option>
+          <Field label="University" hint="Students who use this link join this university. Its student limit decides how many can join.">
+            <select className="input" required value={form.university_id} onChange={set("university_id")}>
+              <option value="">Choose a university</option>
               {universities
                 .filter((u) => u.status === "active")
                 .map((u) => (
@@ -209,14 +217,9 @@ function CreateLinkForm({ staff, universities, defaultUniversity, onClose, onCre
           </select>
         </Field>
         {chosenTest && chosenTest.status !== "published" && <Notice>This test is a draft. Publish it before students sign up, or they'll land on their dashboard instead.</Notice>}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Signup limit" hint="Optional. Empty = no limit">
-            <input className="input" type="number" min={1} max={100000} value={form.max_uses} onChange={set("max_uses")} placeholder="No limit" />
-          </Field>
-          <Field label="Link expires after (days)">
-            <input className="input" type="number" min={1} max={365} required value={form.expires_days} onChange={set("expires_days")} />
-          </Field>
-        </div>
+        <Field label="Link expires after (days)">
+          <input className="input" type="number" min={1} max={365} required value={form.expires_days} onChange={set("expires_days")} />
+        </Field>
         <ErrorText>{error}</ErrorText>
         <div className="flex justify-end gap-2">
           <Button variant="secondary" type="button" onClick={onClose}>
