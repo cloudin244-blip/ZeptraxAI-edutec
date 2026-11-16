@@ -90,13 +90,15 @@ def student(base, code, n, run, think, programs):
     st, paper = call(base, "POST", f"/api/portal/assessments/{test_id}/start", {}, token, label="start")
     if st != 200 or "questions" not in paper:
         return f"start failed: {st} {paper}"
-    for q in paper["questions"]:
+    # Like the exam page: answers are sent in batches (every ~10 s), not one request per click
+    questions = paper["questions"]
+    for i in range(0, len(questions), 4):
         if think:
             time.sleep(random.uniform(0, think))
-        st, _ = call(base, "PUT", f"/api/portal/attempts/{paper['attempt_id']}/answer",
-                     {"question_id": q["id"], "option": random.randrange(len(q["options"]))}, token, label="answer")
+        batch = {q["id"]: random.randrange(len(q["options"])) for q in questions[i:i + 4]}
+        st, _ = call(base, "PUT", f"/api/portal/attempts/{paper['attempt_id']}/answers", {"answers": batch}, token, label="answers")
         if st != 200:
-            return f"answer failed: {st}"
+            return f"answers failed: {st}"
     st, result = call(base, "POST", f"/api/portal/attempts/{paper['attempt_id']}/submit", {}, token, label="submit")
     return None if st == 200 else f"submit failed: {st} {result}"
 
@@ -112,7 +114,7 @@ def main():
     ap.add_argument("--code", required=True, help="signup link code (the part after ?code=)")
     ap.add_argument("--students", type=int, default=100)
     ap.add_argument("--concurrency", type=int, default=50, help="students active at the same time")
-    ap.add_argument("--think", type=float, default=0, help="max seconds a student waits before each answer")
+    ap.add_argument("--think", type=float, default=0, help="max seconds a student waits before each batch of answers")
     ap.add_argument("--i-understand-this-creates-accounts", action="store_true", dest="confirmed")
     args = ap.parse_args()
     if not args.confirmed:

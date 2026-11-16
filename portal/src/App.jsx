@@ -20,6 +20,7 @@ import ManageTests from "./pages/ManageTests.jsx";
 import TestEditor from "./pages/TestEditor.jsx";
 import Projects, { ProjectDetail, ProjectForm } from "./pages/Projects.jsx";
 import MyProjects, { MyProject } from "./pages/MyProjects.jsx";
+import { ChooseProject, ProjectSetDetail } from "./pages/ProjectSets.jsx";
 
 // Students and tests each live in one place; their pages are tabs inside it (see SECTIONS)
 const NAV = {
@@ -163,12 +164,14 @@ function Shell() {
           {manager && <Route path="/results" element={<TestResults />} />}
           {manager && <Route path="/projects" element={<Projects />} />}
           {manager && <Route path="/projects/:id" element={<ProjectDetail />} />}
+          {manager && <Route path="/projects/sets/:id" element={<ProjectSetDetail />} />}
           {superAdmin && <Route path="/projects/new" element={<ProjectForm />} />}
           {superAdmin && <Route path="/projects/:id/edit" element={<ProjectForm />} />}
           {role === "staff" && <Route path="/manage-tests" element={<ManageTests />} />}
           {superAdmin && <Route path="/manage-tests/:id" element={<TestEditor />} />}
           {role === "student" && <Route path="/my-projects" element={<MyProjects />} />}
           {role === "student" && <Route path="/my-projects/:id" element={<MyProject />} />}
+          {role === "student" && <Route path="/my-projects/choose/:id" element={<ChooseProject />} />}
           {role === "staff" && <Route path="/universities" element={<Universities />} />}
           {role === "staff" && <Route path="/tests/:id/key" element={<AnswerKey />} />}
           {superAdmin && <Route path="/catalog" element={<Catalog />} />}

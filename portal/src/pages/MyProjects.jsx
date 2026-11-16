@@ -3,6 +3,15 @@ import { Link, useParams } from "react-router-dom";
 import { portal } from "../api.js";
 import { Badge, Button, Card, ErrorText, Field, formatDate, Loading, Notice, PageHeader, useLoad } from "../components/ui.jsx";
 import { ProjectBrief } from "./Projects.jsx";
+import { ChooseCard, Difficulty, formatDateTime, useTimeLeft } from "./ProjectSets.jsx";
+
+function Due({ project: p }) {
+  const left = useTimeLeft(p.chosen_at && !p.submission?.status?.startsWith("evaluated") ? p.due_date : null);
+  if (p.chosen_at && p.due_date) {
+    return left && left.seconds > 0 ? <span className={left.seconds < 3600 ? "text-red-300" : ""}>{left.text} left (until {formatDateTime(p.due_date)})</span> : <span>Time ended {formatDateTime(p.due_date)}</span>;
+  }
+  return <span>{p.due_date ? `Due ${formatDate(p.due_date)}` : "No due date"}</span>;
+}
 
 export function projectStatus(p) {
   const sub = p.submission;
@@ -19,17 +28,22 @@ export default function MyProjects() {
   return (
     <>
       <PageHeader title="My projects" description="Projects assigned to you. Submit your work before the due date; ZeptraAI marks it against the rubric." />
-      {!data.projects.length && <Card className="p-6 text-sm text-muted">No projects are assigned to you yet.</Card>}
+      {!data.projects.length && !data.sets?.length && <Card className="p-6 text-sm text-muted">No projects are assigned to you yet.</Card>}
       <div className="space-y-3">
+        {(data.sets || []).map((s) => (
+          <ChooseCard key={s.id} set={s} />
+        ))}
         {data.projects.map((p) => (
           <Link key={p.id} to={`/my-projects/${p.id}`} className="block">
             <Card className="p-5 transition-colors hover:border-primary/50">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="font-semibold">{p.title}</p>
+                  <p className="flex flex-wrap items-center gap-2 font-semibold">
+                    {p.title} <Difficulty level={p.difficulty} />
+                  </p>
                   <p className="text-sm text-muted">
                     {p.category && `${p.category} · `}
-                    {p.due_date ? `Due ${formatDate(p.due_date)}` : "No due date"} · {p.total_marks} marks
+                    <Due project={p} /> · {p.total_marks} marks
                   </p>
                 </div>
                 {projectStatus(p)}
@@ -57,7 +71,8 @@ export function MyProject() {
         title={p.title}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            {projectStatus(p)} {p.due_date ? `Due ${formatDate(p.due_date)}` : "No due date"} · {p.total_marks} marks
+            {projectStatus(p)} <Difficulty level={p.difficulty} /> <Due project={p} /> · {p.total_marks} marks
+            {p.set_title && ` · from "${p.set_title}"`}
           </span>
         }
         action={

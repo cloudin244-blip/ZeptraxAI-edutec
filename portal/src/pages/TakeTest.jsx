@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { portal } from "../api.js";
+import { getToken, portal } from "../api.js";
+
+const SAVE_EVERY_MS = 10000; // unsaved choices are sent together this often (and on navigation, leaving and submit)
 import { Badge, Button, Card, ErrorText, Loading, Modal } from "../components/ui.jsx";
 import { formatClock } from "./MyTests.jsx";
 import { Precheck, useProctoring } from "./Proctoring.jsx";
@@ -111,17 +113,45 @@ function Exam({ paper, proctor, onDone }) {
   const [answers, setAnswers] = useState(paper.answers || {});
   const [current, setCurrent] = useState(0);
   const [remaining, setRemaining] = useState(paper.deadline - paper.server_time);
-  const [saveState, setSaveState] = useState({}); // qid -> "saving" | "error"
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [banner, setBanner] = useState("");
+  const [unsaved, setUnsaved] = useState({}); // mirror of `pending` for the screen
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [expired, setExpired] = useState(false);
   const done = useRef(false);
-  const latest = useRef({}); // qid -> the answer most recently chosen, so a slow retry can't overwrite it
+  const pending = useRef({}); // qid -> shown option (null = cleared) chosen but not yet stored
+  const chain = useRef(Promise.resolve(true)); // saves run one after another, so an older batch never lands last
 
-  const submit = useCallback(async () => {
+  // Send everything not yet stored in one request. Resolves to true when nothing is left unsaved.
+  const sendPending = useCallback(async () => {
+    const batch = { ...pending.current };
+    if (!Object.keys(batch).length) return true;
+    try {
+      await portal.put(`/attempts/${paper.attempt_id}/answers`, { answers: batch }, { retries: 4 });
+      for (const [qid, value] of Object.entries(batch)) if (pending.current[qid] === value) delete pending.current[qid];
+      setSaveFailed(false);
+    } catch (e) {
+      if (e.status === 409) setExpired(true); // time is up on the server
+      else setSaveFailed(true);
+    }
+    setUnsaved({ ...pending.current });
+    return !Object.keys(pending.current).length;
+  }, [paper.attempt_id]);
+
+  const flush = useCallback(() => (chain.current = chain.current.then(sendPending, sendPending)), [sendPending]);
+
+  const submit = useCallback(async (timeUp = false) => {
     if (done.current) return;
     done.current = true;
     setSubmitting(true);
+    const saved = await flush();
+    if (!saved && !timeUp) {
+      done.current = false;
+      setSubmitting(false);
+      setBanner("Some answers couldn't be saved yet. Check your connection and press Submit again.");
+      return;
+    }
     try {
       const { result } = await portal.post(`/attempts/${paper.attempt_id}/submit`, {}, { retries: 5 });
       onDone(result);
@@ -137,7 +167,7 @@ function Exam({ paper, proctor, onDone }) {
     const tick = () => {
       const left = paper.deadline - (Date.now() / 1000 + offset.current);
       setRemaining(left);
-      if (left <= 0) submit();
+      if (left <= 0) submit(true);
     };
     tick();
     const timer = setInterval(tick, 1000);
@@ -156,7 +186,34 @@ function Exam({ paper, proctor, onDone }) {
   });
 
   useEffect(() => {
+    if (expired) submit(true);
+  }, [expired, submit]);
+
+  // Save regularly, when moving between questions, and when the student switches away
+  useEffect(() => {
+    const timer = setInterval(flush, SAVE_EVERY_MS);
+    const onHidden = () => document.visibilityState === "hidden" && flush();
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onHidden);
+    };
+  }, [flush]);
+  useEffect(() => {
+    flush();
+  }, [current, flush]);
+
+  useEffect(() => {
     const onUnload = (e) => {
+      // Last chance for unsaved choices: a request that outlives the page
+      if (Object.keys(pending.current).length) {
+        fetch(`/api/portal/attempts/${paper.attempt_id}/answers`, {
+          method: "PUT",
+          keepalive: true,
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+          body: JSON.stringify({ answers: pending.current }),
+        }).catch(() => {});
+      }
       if (!done.current) {
         e.preventDefault();
         e.returnValue = "";
@@ -164,7 +221,7 @@ function Exam({ paper, proctor, onDone }) {
     };
     window.addEventListener("beforeunload", onUnload);
     return () => window.removeEventListener("beforeunload", onUnload);
-  }, []);
+  }, [paper.attempt_id]);
 
   const choose = async (qid, option) => {
     if (done.current) return;
@@ -176,22 +233,8 @@ function Exam({ paper, proctor, onDone }) {
       else copy[qid] = next;
       return copy;
     });
-    latest.current[qid] = next;
-    setSaveState((s) => ({ ...s, [qid]: "saving" }));
-    let sending = next;
-    for (;;) {
-      try {
-        await portal.put(`/attempts/${paper.attempt_id}/answer`, { question_id: qid, option: sending }, { retries: 4 });
-      } catch (e) {
-        if (e.status === 409) return submit(); // time is up on the server
-        if (latest.current[qid] === next) setSaveState((s) => ({ ...s, [qid]: "error" }));
-        return;
-      }
-      // Saves can finish out of order: if a newer choice was made meanwhile, make sure it is the one stored
-      if (latest.current[qid] === sending) break;
-      sending = latest.current[qid];
-    }
-    setSaveState((s) => ({ ...s, [qid]: undefined })); // the latest choice is stored
+    pending.current[qid] = next;
+    setUnsaved({ ...pending.current });
   };
 
   const q = questions[current];
@@ -278,9 +321,13 @@ function Exam({ paper, proctor, onDone }) {
               })}
             </div>
             <p className="mt-3 h-5 text-xs text-muted">
-              {saveState[q.id] === "saving" && "Saving…"}
-              {saveState[q.id] === "error" && <span className="text-red-300">Not saved — check your connection and choose again.</span>}
-              {!saveState[q.id] && answers[q.id] !== undefined && "Saved. Tap your answer again to clear it."}
+              {q.id in unsaved &&
+                (saveFailed ? (
+                  <span className="text-amber-300">Not saved yet — check your connection. It keeps trying automatically.</span>
+                ) : (
+                  "Saving shortly…"
+                ))}
+              {!(q.id in unsaved) && answers[q.id] !== undefined && "Saved. Tap your answer again to clear it."}
             </p>
             <div className="mt-4 flex justify-between gap-2">
               <Button variant="secondary" disabled={current === 0} onClick={() => setCurrent((c) => c - 1)}>
