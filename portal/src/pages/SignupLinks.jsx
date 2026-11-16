@@ -22,8 +22,19 @@ export default function SignupLinks({ staff, universities, universityId }) {
   const [created, setCreated] = useState(null);
   const [revoking, setRevoking] = useState("");
 
+  const change = async (link, body) => {
+    setRevoking(link.id);
+    try {
+      await portal.put(`/invite-links/${link.id}`, body);
+      reload();
+    } catch (err) {
+      window.alert(err.message);
+    }
+    setRevoking("");
+  };
+
   const revoke = async (link) => {
-    if (!window.confirm("Turn off this signup link? Students who already registered keep their accounts.")) return;
+    if (!window.confirm("Turn off this signup link? Students who already registered keep their accounts. You can turn it on again later.")) return;
     setRevoking(link.id);
     try {
       await portal.post(`/invite-links/${link.id}/revoke`);
@@ -84,12 +95,24 @@ export default function SignupLinks({ staff, universities, universityId }) {
     {
       key: "actions",
       label: "",
-      render: (l) =>
-        l.status === "active" && (
-          <Button variant="danger" loading={revoking === l.id} onClick={() => revoke(l)}>
-            Turn off
-          </Button>
-        ),
+      render: (l) => (
+        <div className="flex justify-end gap-2">
+          {l.status === "active" ? (
+            <>
+              <Button variant="secondary" loading={revoking === l.id} onClick={() => change(l, { expires_days: 30 })} title="Keep it working for 30 more days from today">
+                Extend
+              </Button>
+              <Button variant="danger" loading={revoking === l.id} onClick={() => revoke(l)}>
+                Turn off
+              </Button>
+            </>
+          ) : (
+            <Button variant="secondary" loading={revoking === l.id} onClick={() => change(l, { active: true, expires_days: 30 })}>
+              Turn on for 30 days
+            </Button>
+          )}
+        </div>
+      ),
     },
   ];
 
@@ -175,7 +198,12 @@ function CreateLinkForm({ staff, universities, defaultUniversity, onClose, onCre
     }
   };
 
-  const chosenTest = tests?.assessments?.find((t) => t.id === form.assessment_id);
+  // Only tests that this university's students are assigned to
+  const targetUniversity = staff ? form.university_id : null;
+  const choosable = (tests?.assessments || []).filter(
+    (t) => t.audience !== "universities" || (targetUniversity ? t.university_ids.includes(targetUniversity) : true)
+  );
+  const chosenTest = choosable.find((t) => t.id === form.assessment_id);
 
   return (
     <Modal title="Create signup link" onClose={onClose}>
@@ -208,7 +236,7 @@ function CreateLinkForm({ staff, universities, defaultUniversity, onClose, onCre
         <Field label="Test after signup" hint="Students land on this test's start screen right after creating their account">
           <select className="input" value={form.assessment_id} onChange={set("assessment_id")}>
             <option value="">Their required test (default)</option>
-            {(tests?.assessments || []).map((t) => (
+            {choosable.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.title}
                 {t.status !== "published" ? " (draft)" : ""}

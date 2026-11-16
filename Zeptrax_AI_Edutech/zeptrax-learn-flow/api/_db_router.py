@@ -231,24 +231,6 @@ def serialize_doc(doc):
 # Override with the SUPER_ADMIN_EMAIL environment variable.
 SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "cloudin244@gmail.com").strip().lower()
 
-# Collections only admins may read through the generic entity endpoints
-ADMIN_ONLY_READ = {"User", "AdminInvitation", "EmailLog", "AuditLog", "StudentProfile",
-                   "University", "InvitationCampaign", "Invitation",
-                   "Assessment", "AssessmentQuestion", "AssessmentAttempt",
-                   "CatalogProgram", "CatalogFreeCourse", "PortalProject", "ProjectSubmission"}
-
-# Collections only admins may change through the generic entity endpoints
-ADMIN_ONLY_WRITE = {"User", "StudentProfile", "University", "InvitationCampaign", "Invitation",
-                    "Assessment", "AssessmentQuestion", "AssessmentAttempt", "PortalProject", "ProjectSubmission",
-                    "AdminInvitation", "Certificate", "Course", "CourseModule", "Document",
-                    "EmailLog", "Project", "TeamMember", "Review"}
-
-# Website content only the super admin may change (courses, their modules and the website catalog)
-SUPER_ADMIN_ONLY_WRITE = {"Course", "CourseModule", "CatalogProgram", "CatalogFreeCourse", "Project"}
-
-# Collections anyone (even logged out) may add to through the generic entity endpoints
-ANONYMOUS_CREATE_OK = {"AuditLog"}
-
 # User fields that only the backend sets
 PROTECTED_USER_FIELDS = ("_id", "id", "email", "token", "role", "verified", "password", "password_hash",
                          "university_id", "department", "batch", "invitation_id",
@@ -256,9 +238,6 @@ PROTECTED_USER_FIELDS = ("_id", "id", "email", "token", "role", "verified", "pas
                          "program_slug")  # set through the portal, which checks it against the catalog
 
 PBKDF2_ITERATIONS = 200_000
-
-# Without email settings no code can be sent, so verify-otp only signs in brand-new accounts within this window
-OTP_WINDOW_SECONDS = 30 * 60
 
 # Emailed verification codes (used once SMTP_HOST, SMTP_USER and SMTP_PASSWORD are set)
 OTP_TTL_SECONDS = 10 * 60
@@ -392,10 +371,15 @@ def issue_otp(user):
 
 
 def apply_bootstrap_role(user):
-    """Give the configured super-admin account its role in the database"""
-    if user and normalize_email(user.get("email")) == SUPER_ADMIN_EMAIL and user.get("role") != "super_admin":
-        db["User"].update_one({"_id": user["_id"]}, {"$set": {"role": "super_admin"}})
-        user["role"] = "super_admin"
+    """First-time setup: give the configured account the super_admin role. Only a verified main-site account
+    qualifies (never a student created through a signup link), and only while no super admin exists, so
+    nobody can claim the role by registering that email later."""
+    if (user and normalize_email(user.get("email")) == SUPER_ADMIN_EMAIL and user.get("role") in ("user", "admin")
+            and user.get("verified") is True and user.get("status") != "inactive"):
+        if not cached("super_admin_exists", 300, lambda: db["User"].count_documents({"role": "super_admin"}, limit=1) > 0):
+            db["User"].update_one({"_id": user["_id"]}, {"$set": {"role": "super_admin"}})
+            user["role"] = "super_admin"
+            uncache("super_admin_exists")
     return user
 
 
@@ -623,13 +607,16 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                 "email": email,
                 "password_hash": hash_password(password),
                 "name": user_data.get("name", "Student"),
-                "role": "super_admin" if email == SUPER_ADMIN_EMAIL else "user",  # never trust a client-supplied role
+                "role": "user",  # never trust a client-supplied role
                 "token": token,
-                "verified": False,
+                "verified": not email_configured(),
                 "created_at": time.time(),
                 "app_id": app_id
             }
-            db["User"].insert_one(new_user)
+            try:
+                db["User"].insert_one(new_user)
+            except DuplicateKeyError:
+                return {"status": 400, "body": {"error": "User already exists"}}
             if email_configured():
                 issue_otp(new_user)  # a failed send can be retried with "Resend code"
             user_response = public_user(serialize_doc(new_user))
@@ -711,9 +698,9 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                     db["User"].update_one({"_id": user["_id"]}, {"$inc": {"otp_attempts": 1}})
                     message = "That code isn't right. Check the latest email from ZeptraAI and try again."
                     return {"status": 400, "body": {"error": message, "message": message}}
-            elif time.time() - user.get("created_at", 0) > OTP_WINDOW_SECONDS:
-                # No email service: brand-new accounts only, so this can't be used to take over existing ones
-                message = "Verification expired. Please log in with your email and password."
+            else:
+                # No email service, so no code can be checked: never hand out a token for just an email address
+                message = "Please log in with your email and password."
                 return {"status": 401, "body": {"error": message, "message": message}}
             db["User"].update_one({"_id": user["_id"]}, {"$set": {"verified": True},
                                                          "$unset": {"otp_hash": "", "otp_expires_at": "", "otp_attempts": "", "otp_sent_at": ""}})
@@ -796,278 +783,12 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                 raise
             return {"status": 500, "body": {"error": str(e)}}
 
-    # --- 3. ENTITY ENDPOINTS ---
-
-    # Regex pattern matching /apps/<appId>/entities/<entity> or /apps/<appId>/entities/<entity>/<itemId>
+    # --- 3. ENTITY ENDPOINTS (main website) ---
+    # Only collections with explicit rules in _entities.py are reachable; everything else is refused.
     match = re.match(r"^/apps/([^/]+)/entities/([^/]+)(?:/([^/]+))?$", normalized)
     if match:
-        app_id = match.group(1)
-        entity = match.group(2)
-        item_id = match.group(3)
-
-        collection = db[entity]
-
-        # SPECIAL CASE: GET /entities/User/me
-        if entity == "User" and item_id == "me":
-            if method == "GET":
-                user = get_authorized_user(headers)
-                if not user:
-                    return {
-                        "status": 401,
-                        "body": {
-                            "message": "Authentication required to view users",
-                            "detail": "You must be logged in to perform this operation."
-                        }
-                    }
-                return {"status": 200, "body": public_user(user)}
-
-            elif method == "PUT":
-                user = get_authorized_user(headers)
-                if not user:
-                    return {"status": 401, "body": {"error": "Authentication required"}}
-                try:
-                    update_data = json.loads(body_data) if body_data else {}
-                    # Avoid updating the immutable fields
-                    if not isinstance(update_data, dict):
-                        return {"status": 400, "body": {"error": "Invalid profile data"}}
-                    for field in PROTECTED_USER_FIELDS:  # users must not promote themselves or change identity
-                        update_data.pop(field, None)
-
-                    db["User"].update_one({"id": user["id"]}, {"$set": update_data})
-                    forget_user(user.get("token"))
-                    updated_user = db["User"].find_one({"id": user["id"]})
-                    return {"status": 200, "body": public_user(serialize_doc(updated_user))}
-                except Exception as e:
-                    if isinstance(e, PyMongoError):
-                        raise
-                    return {"status": 500, "body": {"error": str(e)}}
-
-        # ACCESS CONTROL
-        requester = get_authorized_user(headers)
-        admin = is_admin(requester)
-        if method != "GET" and entity in SUPER_ADMIN_ONLY_WRITE and not is_super_admin(requester):
-            return {"status": 403, "body": {"error": "Only the super admin can change courses and the website catalog"}}
-        if not admin:
-            if method == "GET" and entity in ADMIN_ONLY_READ:
-                return {"status": 403, "body": {"error": "Admin access required"}}
-            if method != "GET" and entity in ADMIN_ONLY_WRITE:
-                return {"status": 403, "body": {"error": "Admin access required"}}
-            if method == "GET" and entity == "Enrollment" and not requester:
-                return {"status": 401, "body": {"error": "Authentication required"}}
-            # Bulk delete / update-many can wipe whole collections
-            if (method == "DELETE" and (not item_id or item_id in ("bulk", "update-many"))) or method == "PATCH":
-                return {"status": 403, "body": {"error": "Admin access required"}}
-            if method == "PUT" and item_id in (None, "bulk", "update-many"):
-                return {"status": 403, "body": {"error": "Admin access required"}}
-            if method != "GET" and not requester and not (method == "POST" and entity in ANONYMOUS_CREATE_OK):
-                return {"status": 401, "body": {"error": "Authentication required"}}
-            if method in ("PUT", "DELETE") and entity == "Enrollment" and item_id and item_id not in ("bulk", "update-many"):
-                existing = collection.find_one({"id": item_id})
-                if existing and existing.get("student_id") != requester.get("id") and existing.get("student_email") != requester.get("email"):
-                    return {"status": 403, "body": {"error": "You can only change your own enrollments"}}
-        # Students only ever see their own enrollments
-        own_enrollments = None
-        if entity == "Enrollment" and not admin and requester:
-            own_enrollments = {"$or": [{"student_id": requester.get("id")}, {"student_email": requester.get("email")}]}
-
-        # GENERAL CRUD OPERATIONS FOR ENTITIES
-
-        # A. GET requests (List / Filter / Retrieve)
-        if method == "GET":
-            # Retrieve single document by ID
-            if item_id and item_id not in ("bulk", "update-many"):
-                doc = collection.find_one({"id": item_id})
-                if not doc:
-                    doc = collection.find_one({"_id": item_id})  # Fallback to ObjectId string
-                if not doc:
-                    return {"status": 404, "body": {"error": f"Item {item_id} not found in {entity}"}}
-                if own_enrollments and doc.get("student_id") != requester.get("id") and doc.get("student_email") != requester.get("email"):
-                    return {"status": 404, "body": {"error": f"Item {item_id} not found in {entity}"}}
-                doc = serialize_doc(doc)
-                return {"status": 200, "body": public_user(doc) if entity == "User" else doc}
-
-            # List or filter documents
-            else:
-                filter_dict = {}
-                q_param = query_params.get("q")
-                if q_param:
-                    try:
-                        filter_dict = json.loads(q_param[0])
-                    except Exception as e:
-                        print(f"Error parsing filter: {e}")
-
-                # Anyone may verify a certificate by its code; full certificate lists are admin-only
-                if entity == "Certificate" and not admin and not (isinstance(filter_dict, dict) and filter_dict.get("certificate_code")):
-                    return {"status": 403, "body": {"error": "Admin access required"}}
-                if own_enrollments:
-                    filter_dict = {"$and": [filter_dict, own_enrollments]} if filter_dict else own_enrollments
-
-                # Setup sorting
-                sort_list = []
-                sort_param = query_params.get("sort")
-                if sort_param:
-                    sort_field = sort_param[0]
-                    direction = 1
-                    if sort_field.startswith("-"):
-                        direction = -1
-                        sort_field = sort_field[1:]
-                    sort_list.append((sort_field, direction))
-                else:
-                    sort_list.append(("created_date", -1)) # Default sort
-
-                # Setup pagination
-                limit_val = 0
-                limit_param = query_params.get("limit")
-                if limit_param:
-                    try:
-                        limit_val = int(limit_param[0])
-                    except ValueError:
-                        pass
-
-                skip_val = 0
-                skip_param = query_params.get("skip")
-                if skip_param:
-                    try:
-                        skip_val = int(skip_param[0])
-                    except ValueError:
-                        pass
-
-                cursor = collection.find(filter_dict)
-                if sort_list:
-                    # Ignore sorting if default field is missing in first query schema
-                    try:
-                        cursor = cursor.sort(sort_list)
-                    except Exception:
-                        pass
-                if skip_val:
-                    cursor = cursor.skip(skip_val)
-                if limit_val:
-                    cursor = cursor.limit(limit_val)
-
-                results = serialize_doc(list(cursor))
-                if entity == "User":
-                    results = [public_user(u) for u in results]
-                return {"status": 200, "body": results}
-
-        # B. POST requests (Create / Bulk Create)
-        elif method == "POST":
-            # Bulk insertion
-            if item_id == "bulk":
-                try:
-                    docs = json.loads(body_data) if body_data else []
-                    if not isinstance(docs, list):
-                        docs = [docs]
-                    inserted_docs = []
-                    for doc in docs:
-                        if not isinstance(doc, dict):
-                            continue
-                        if "id" not in doc:
-                            doc["id"] = str(uuid.uuid4())
-                        if "created_date" not in doc:
-                            doc["created_date"] = time.time()
-                        collection.insert_one(doc)
-                        inserted_docs.append(serialize_doc(doc))
-                    return {"status": 200, "body": inserted_docs}
-                except Exception as e:
-                    if isinstance(e, PyMongoError):
-                        raise
-                    return {"status": 500, "body": {"error": str(e)}}
-
-            # Single insertion
-            else:
-                try:
-                    doc = json.loads(body_data) if body_data else {}
-                    if "id" not in doc:
-                        doc["id"] = str(uuid.uuid4())
-                    if "created_date" not in doc:
-                        doc["created_date"] = time.time()
-                    collection.insert_one(doc)
-                    return {"status": 200, "body": serialize_doc(doc)}
-                except Exception as e:
-                    if isinstance(e, PyMongoError):
-                        raise
-                    return {"status": 500, "body": {"error": str(e)}}
-
-        # C. PUT requests (Update / Bulk Update)
-        elif method == "PUT":
-            # Bulk update
-            if item_id == "bulk":
-                try:
-                    updates = json.loads(body_data) if body_data else []
-                    updated_docs = []
-                    for item in updates:
-                        if not isinstance(item, dict) or "id" not in item:
-                            continue
-                        doc_id = item["id"]
-                        item.pop("_id", None)
-                        collection.update_one({"id": doc_id}, {"$set": item})
-                        updated = collection.find_one({"id": doc_id})
-                        if updated:
-                            updated_docs.append(serialize_doc(updated))
-                    return {"status": 200, "body": updated_docs}
-                except Exception as e:
-                    if isinstance(e, PyMongoError):
-                        raise
-                    return {"status": 500, "body": {"error": str(e)}}
-
-            # Single update
-            elif item_id:
-                try:
-                    update_data = json.loads(body_data) if body_data else {}
-                    update_data.pop("_id", None)
-                    update_data.pop("id", None)
-                    collection.update_one({"id": item_id}, {"$set": update_data})
-                    updated = collection.find_one({"id": item_id})
-                    if not updated:
-                        return {"status": 404, "body": {"error": f"Item {item_id} not found in {entity}"}}
-                    return {"status": 200, "body": serialize_doc(updated)}
-                except Exception as e:
-                    if isinstance(e, PyMongoError):
-                        raise
-                    return {"status": 500, "body": {"error": str(e)}}
-
-        # D. DELETE requests (Delete Single / Delete Many)
-        elif method == "DELETE":
-            # Delete single item
-            if item_id and item_id not in ("bulk", "update-many"):
-                res = collection.delete_one({"id": item_id})
-                if res.deleted_count == 0:
-                    collection.delete_one({"_id": item_id})
-                return {"status": 200, "body": {"ok": True}}
-
-            # Delete multiple matching filter (body data has ids or query filter)
-            else:
-                try:
-                    delete_filter = {}
-                    if body_data:
-                        body_json = json.loads(body_data)
-                        if isinstance(body_json, list):
-                            delete_filter = {"id": {"$in": body_json}}
-                        elif isinstance(body_json, dict):
-                            delete_filter = body_json
-                    collection.delete_many(delete_filter)
-                    return {"status": 200, "body": {"ok": True}}
-                except Exception as e:
-                    if isinstance(e, PyMongoError):
-                        raise
-                    return {"status": 500, "body": {"error": str(e)}}
-
-        # E. PATCH requests (Update Many)
-        elif method == "PATCH":
-            if item_id == "update-many":
-                try:
-                    patch_data = json.loads(body_data) if body_data else {}
-                    filter_q = patch_data.get("query", {})
-                    update_val = patch_data.get("data", {})
-                    update_val.pop("_id", None)
-                    update_val.pop("id", None)
-
-                    collection.update_many(filter_q, {"$set": update_val})
-                    return {"status": 200, "body": {"ok": True}}
-                except Exception as e:
-                    if isinstance(e, PyMongoError):
-                        raise
-                    return {"status": 500, "body": {"error": str(e)}}
+        import _entities
+        return _entities.handle(db, method, match.group(2), match.group(3), query_params or {}, body_data, headers)
 
     return None  # Path did not match any database endpoints
 

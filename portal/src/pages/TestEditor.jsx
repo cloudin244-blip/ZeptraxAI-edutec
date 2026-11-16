@@ -12,6 +12,7 @@ export default function TestEditor() {
   const [editing, setEditing] = useState(null); // {} = new question
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [settingsDirty, setSettingsDirty] = useState(false);
 
   const test = tests?.assessments.find((t) => t.id === id);
   if (testsError || keyError) return <ErrorText>{testsError || keyError}</ErrorText>;
@@ -55,6 +56,8 @@ export default function TestEditor() {
             </Link>
             <Button
               loading={busy === "status"}
+              disabled={settingsDirty}
+              title={settingsDirty ? "Save or undo your settings changes first" : undefined}
               variant={test.status === "published" ? "secondary" : "primary"}
               onClick={() => run("status", () => portal.put(`/assessments/${id}`, { status: test.status === "published" ? "draft" : "published" }))}
             >
@@ -64,6 +67,11 @@ export default function TestEditor() {
         }
       />
       <ErrorText>{error}</ErrorText>
+      {settingsDirty && (
+        <div className="mb-4">
+          <Notice>You have unsaved settings below. Save them before publishing, so students get the test as you set it up.</Notice>
+        </div>
+      )}
       {locked && (
         <div className="mb-4">
           <Notice>
@@ -72,7 +80,7 @@ export default function TestEditor() {
           </Notice>
         </div>
       )}
-      <Settings test={test} universities={universities?.universities || []} locked={locked} onSaved={reloadTests} />
+      <Settings test={test} universities={universities?.universities || []} locked={locked} onSaved={reloadTests} onDirtyChange={setSettingsDirty} />
 
       <div className="mb-3 mt-8 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Questions</h2>
@@ -155,12 +163,19 @@ export default function TestEditor() {
   );
 }
 
-function Settings({ test, universities, locked, onSaved }) {
+const SETTING_KEYS = ["title", "description", "duration_minutes", "marks_per_question", "negative_marks", "required", "show_score_to_students",
+  "audience", "university_ids", "proctoring", "warning_limit"];
+const settingsOf = (t) => JSON.stringify(SETTING_KEYS.map((k) => (Array.isArray(t[k]) ? [...t[k]].sort() : String(t[k] ?? ""))));
+
+function Settings({ test, universities, locked, onSaved, onDirtyChange }) {
   const [form, setForm] = useState(test);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => setForm(test), [test]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setForm(test), [test.id]);
+  const dirty = settingsOf(form) !== settingsOf(test);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   const set = (k, v) => {
     setSaved(false);
     setForm({ ...form, [k]: v });

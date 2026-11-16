@@ -36,7 +36,11 @@ export default function Login() {
     setError("");
     try {
       const { access_token } = await login(email.trim(), password);
-      await signIn(access_token);
+      const me = await signIn(access_token);
+      if (!me) {
+        setError("You're signed in, but your account couldn't be loaded. Check your connection and try again.");
+        setBusy(false);
+      }
     } catch (err) {
       setError(err.message);
       setBusy(false);

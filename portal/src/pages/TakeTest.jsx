@@ -34,7 +34,7 @@ export default function TakeTest() {
       .get("/assessments", { retries: 3 })
       .then(({ assessments }) => {
         const found = assessments.find((a) => a.id === id);
-        if (!found) return setError("This test isn't available to you.");
+        if (!found || !found.attempt) return setError("This test isn't available to you. Tests are taken from a student account.");
         if (found.attempt.status === "submitted") return setResult(found.attempt);
         setTest(found);
         if (!found.proctoring) begin(null);

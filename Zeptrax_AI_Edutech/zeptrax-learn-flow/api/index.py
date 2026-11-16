@@ -122,7 +122,7 @@ def call_openai(prompt, schema=None, api_key=None):
     )
     
     try:
-        with urllib.request.urlopen(req) as response:
+        with urllib.request.urlopen(req, timeout=20) as response:
             res_data = response.read().decode("utf-8")
             res_json = json.loads(res_data)
             text_response = res_json["choices"][0]["message"]["content"]
@@ -189,6 +189,9 @@ class handler(BaseHTTPRequestHandler):
                 candidates.append(root / f"{alt2}.json")
 
         for candidate in candidates:
+            # Only static mock responses; never source code or anything outside the site folder
+            if ".." in path_str or candidate.name.startswith(".") or candidate.suffix not in ("", ".html", ".json"):
+                continue
             if candidate.exists() and candidate.is_file():
                 self.send_response(200)
                 if candidate.suffix == ".json":
@@ -214,7 +217,6 @@ class handler(BaseHTTPRequestHandler):
             "path": self.path,
             "db_router": "loaded" if handle_db_request else DB_ROUTER_ERROR,
             "db_connected": getattr(_db_router, "db", None) is not None,
-            "headers": dict(self.headers)
         }).encode('utf-8'))
 
     def _send_db_response(self, db_response):
@@ -245,6 +247,10 @@ class handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         parsed_path = parsed.path
         if parsed_path.endswith("/integration-endpoints/Core/InvokeLLM"):
+            # The AI assistant costs money per call: limit each visitor
+            if _db_router and _db_router.rate_limited(f"llm:{_db_router.client_ip(self.headers)}", 40, 10 * 60):
+                self._send_db_response({"status": 200, "body": {"response": "You've sent a lot of messages. Please wait a few minutes and try again."}})
+                return
             try:
                 content_length = int(self.headers.get('Content-Length', 0))
                 post_data = self.rfile.read(content_length)
@@ -326,6 +332,9 @@ class handler(BaseHTTPRequestHandler):
                 candidates.append(root / f"{alt2}.json")
 
         for candidate in candidates:
+            # Only static mock responses; never source code or anything outside the site folder
+            if ".." in path_str or candidate.name.startswith(".") or candidate.suffix not in ("", ".html", ".json"):
+                continue
             if candidate.exists() and candidate.is_file():
                 self.send_response(200)
                 if candidate.suffix == ".json":

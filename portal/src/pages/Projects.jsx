@@ -189,7 +189,7 @@ export function ProjectForm() {
             Cancel
           </Button>
           <Button variant="secondary" loading={busy} onClick={() => save("draft")}>
-            Save as draft
+            {form.status === "published" ? "Unpublish and save" : "Save as draft"}
           </Button>
           <Button loading={busy} onClick={() => save("published")}>
             {form.status === "published" ? "Save" : "Save and publish"}
@@ -301,7 +301,10 @@ export function ProjectDetail() {
               {row.submission.status === "evaluated" ? "View marks" : "Mark"}
             </Button>
             {row.submission.status === "evaluated" && (
-              <Button variant="secondary" loading={busy === row.submission.id} onClick={() => run(row.submission.id, () => portal.post(`/submissions/${row.submission.id}/reopen`))}>
+              <Button variant="secondary" loading={busy === row.submission.id} onClick={() =>
+                  window.confirm(`Reopen ${row.student.full_name || "this student"}'s submission? Their marks and feedback are removed so it can be marked again.`) &&
+                  run(row.submission.id, () => portal.post(`/submissions/${row.submission.id}/reopen`))
+                }>
                 Reopen
               </Button>
             )}

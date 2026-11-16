@@ -146,7 +146,7 @@ def update_profile(db, user, body):
     for field in ("github", "linkedin"):
         if updates.get(field) and not updates[field].startswith(("https://", "http://")):
             return error(400, f"{field.title()} must be a full link starting with https://")
-    if "program_slug" in data and user.get("role") == STUDENT:
+    if "program_slug" in data and user.get("role") == STUDENT and data["program_slug"] != user.get("program_slug"):
         slug, problem = check_program(db, data["program_slug"], required=True)
         if problem:
             return error(400, problem)
@@ -315,6 +315,8 @@ def admin_invitation(db, user, body):
     university = db["University"].find_one({"id": data.get("university_id")})
     if not university:
         return error(404, "University not found")
+    if university.get("status") == "inactive":
+        return error(400, "This university is inactive. Make it active before inviting an admin.")
     expires_days = parse_int(data.get("expires_days"), 7, 1, 30)
     return create_invitations(db, user, university, UNIVERSITY_ADMIN, 1, expires_days)
 
@@ -502,6 +504,8 @@ def overview(db, user):
             "students": db["User"].count_documents({"role": STUDENT}),
             "university_admins": db["User"].count_documents({"role": UNIVERSITY_ADMIN}),
             "pending_invitations": db["Invitation"].count_documents({"role": STUDENT, **pending_filter(now)}),
+            "active_links": db["InviteLink"].count_documents({"revoked": {"$ne": True}, "expires_at": {"$gt": now}}),
+            "inactive_students": db["User"].count_documents({"role": STUDENT, "status": "inactive"}),
         })
     if user.get("role") == UNIVERSITY_ADMIN:
         uid = user.get("university_id")
@@ -511,6 +515,7 @@ def overview(db, user):
             "max_students": uni.get("max_students"),
             "students": db["User"].count_documents({"university_id": uid, "role": STUDENT}),
             "pending_invitations": db["Invitation"].count_documents({"university_id": uid, "role": STUDENT, **pending_filter(now)}),
+            "active_links": db["InviteLink"].count_documents({"university_id": uid, "revoked": {"$ne": True}, "expires_at": {"$gt": now}}),
             "profiles_complete": db["User"].count_documents({"university_id": uid, "role": STUDENT, **{f: {"$nin": [None, ""]} for f in PROFILE_FIELDS}}),
         })
     return error(403, "Not allowed")
@@ -535,6 +540,10 @@ def handle(db, method, path, query_params, body_data, user, headers=None):
 
     if not user:
         return error(401, "Please log in")
+
+    # A university admin account must belong to a university; without one it would see everything
+    if user.get("role") == UNIVERSITY_ADMIN and not user.get("university_id") and path != "/me":
+        return error(403, "Your account isn't linked to a university. Contact ZeptraAI.")
 
     if path == "/me" and method == "GET":
         return get_me(db, user)
@@ -587,4 +596,41 @@ def handle(db, method, path, query_params, body_data, user, headers=None):
         return programs_overview(db, user)
     if path == "/students" and method == "GET":
         return list_students(db, user, query_params)
+    match = re.fullmatch(r"/accounts/([\w-]+)/status", path)
+    if match and method == "PUT":
+        return set_account_status(db, user, match.group(1), body_data)
+    match = re.fullmatch(r"/universities/([\w-]+)/admins", path)
+    if match and method == "GET":
+        return university_admins(db, user, match.group(1))
     return error(404, "Not found")
+
+
+def set_account_status(db, user, account_id, body):
+    """Deactivate or reactivate a student (staff, or their own university's admin) or a university admin (staff).
+    An inactive account can't sign in or use the API; its results and submissions are kept."""
+    data = parse_body(body) or {}
+    status = data.get("status")
+    if status not in ("active", "inactive"):
+        return error(400, "Status must be active or inactive")
+    account = db["User"].find_one({"id": account_id}, {"id": 1, "role": 1, "university_id": 1, "token": 1})
+    if not account or account.get("role") not in (STUDENT, UNIVERSITY_ADMIN):
+        return error(404, "Account not found")
+    if account["role"] == UNIVERSITY_ADMIN and not is_staff(user):
+        return error(403, "Only Zeptrax staff can change university admin accounts")
+    _, problem = scope_university(db, user, account.get("university_id"))
+    if problem:
+        return problem
+    if account["id"] == user.get("id"):
+        return error(400, "You can't deactivate your own account")
+    db["User"].update_one({"id": account_id}, {"$set": {"status": status, "status_changed_by": user.get("email"), "status_changed_at": time.time()}})
+    core.forget_user(account.get("token"))
+    return ok({"id": account_id, "status": status})
+
+
+def university_admins(db, user, university_id):
+    if not is_staff(user):
+        return error(403, "Only Zeptrax staff can see university admins")
+    admins = [{"id": a["id"], "name": a.get("full_name") or a.get("name") or "", "email": a.get("email", ""),
+               "status": a.get("status", "active"), "created_at": a.get("created_at")}
+              for a in db["User"].find({"role": UNIVERSITY_ADMIN, "university_id": university_id}).sort("created_at", 1)]
+    return ok({"admins": admins})

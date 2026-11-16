@@ -1,14 +1,14 @@
 import { Link } from "react-router-dom";
 import { portal } from "../api.js";
 import { roleOf, useAuth } from "../auth.jsx";
-import { Card, PageHeader, useLoad } from "../components/ui.jsx";
+import { Card, ErrorText, PageHeader, useLoad } from "../components/ui.jsx";
 import { RequiredTestBanner } from "./MyTests.jsx";
 import { projectStatus } from "./MyProjects.jsx";
 
 export default function StudentHome() {
   const { user } = useAuth();
-  const [tests] = useLoad(() => (roleOf(user) === "student" ? portal.get("/assessments") : Promise.resolve(null)), [user?.id]);
-  const [projects] = useLoad(() => (roleOf(user) === "student" ? portal.get("/projects") : Promise.resolve(null)), [user?.id]);
+  const [tests, testsError] = useLoad(() => (roleOf(user) === "student" ? portal.get("/assessments") : Promise.resolve(null)), [user?.id]);
+  const [projects, projectsError] = useLoad(() => (roleOf(user) === "student" ? portal.get("/projects") : Promise.resolve(null)), [user?.id]);
 
   if (roleOf(user) !== "student") {
     return (
@@ -16,7 +16,8 @@ export default function StudentHome() {
         <PageHeader title={`Welcome, ${user.full_name || user.name || user.email}`} />
         <Card className="p-6 text-sm text-muted">
           Your account isn't linked to a university yet. The University Portal is for students and coordinators of partner universities: ask your
-          university's placement coordinator for your personal invitation link, then register with it.
+          university's placement coordinator for your university's signup link, open it while logged out, and sign up (or enter this
+          account's password there to link it).
         </Card>
       </>
     );
@@ -36,6 +37,11 @@ export default function StudentHome() {
             Choose it on your profile →
           </Link>
         </Card>
+      )}
+      {(testsError || projectsError) && (
+        <div className="mb-6">
+          <ErrorText>Some of your information couldn't be loaded: {testsError || projectsError} Reload the page to try again.</ErrorText>
+        </div>
       )}
       <RequiredTestBanner tests={tests?.assessments} />
       <div className="grid gap-4 lg:grid-cols-3">

@@ -49,7 +49,7 @@ export default function ManageTests() {
     <>
       <PageHeader
         title="Tests"
-        description="Create tests, write their questions and publish them to students. Results are on each test's Results page."
+        description={superAdmin ? "Create tests, write their questions and publish them to students." : "Tests on the portal. Only the super admin can create or edit them."}
         action={superAdmin && <Button onClick={() => setCreating(true)}>New test</Button>}
       />
       <ErrorText>{error}</ErrorText>

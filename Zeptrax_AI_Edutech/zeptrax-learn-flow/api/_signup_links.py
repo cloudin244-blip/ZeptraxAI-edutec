@@ -143,21 +143,7 @@ def join(db, body, headers):
     if problem:
         return error(400, problem)
 
-    existing = db["User"].find_one({"email": email})
-    if existing:
-        # Same student pressing "Create account" twice (or retrying after a dropped connection): sign them in
-        if existing.get("invite_link_id") == link["id"] and core.check_password(existing, password):
-            return signed_up(db, existing, link)
-        return error(409, "An account with this email already exists. Log in instead.")
-
-    problem = university_full(db, university)
-    if problem:
-        return error(400, problem)
-
-    user = {
-        "id": str(uuid.uuid4()),
-        "email": email,
-        "password_hash": core.hash_password(password),
+    details = {
         "full_name": full_name,
         "name": full_name,
         "phone": phone,
@@ -170,9 +156,41 @@ def join(db, body, headers):
         "registration_number": registration_number,
         "program_slug": program_slug,
         "invite_link_id": link["id"],
-        "token": uuid.uuid4().hex,
         "verified": True,
         "status": "active",
+    }
+
+    existing = db["User"].find_one({"email": email})
+    if existing:
+        # Checking a password here counts towards the same per-email limit as signing in
+        if core.rate_limited(f"login:{email}", core.LOGIN_ATTEMPTS_PER_EMAIL, 15 * 60):
+            return core.too_many("Too many attempts for this email. Please wait 15 minutes and try again.")
+        if not core.check_password(existing, password) or existing.get("status") == "inactive":
+            return error(409, "An account with this email already exists. Enter that account's password to link it to "
+                              f"{university['name']}, or log in.")
+        # Same student pressing "Create account" twice (or retrying after a dropped connection): sign them in
+        if existing.get("invite_link_id") == link["id"]:
+            return signed_up(db, existing, link)
+        # A plain website account joins the university; admins and other universities' students can't
+        if existing.get("role", "user") != "user":
+            return error(409, "This account already belongs to a university or staff team. Log in instead.")
+        problem = university_full(db, university)
+        if problem:
+            return error(400, problem)
+        db["User"].update_one({"id": existing["id"], "role": {"$in": ["user", None]}}, {"$set": {**details, "joined_at": time.time()}})
+        core.forget_user(existing.get("token"))
+        return signed_up(db, db["User"].find_one({"id": existing["id"]}), link)
+
+    problem = university_full(db, university)
+    if problem:
+        return error(400, problem)
+
+    user = {
+        "id": str(uuid.uuid4()),
+        "email": email,
+        "password_hash": core.hash_password(password),
+        **details,
+        "token": uuid.uuid4().hex,
         "created_at": time.time(),
     }
     try:
@@ -183,6 +201,9 @@ def join(db, body, headers):
 
 
 def signed_up(db, user, link):
+    if not user.get("token"):
+        user["token"] = uuid.uuid4().hex
+        db["User"].update_one({"id": user["id"]}, {"$set": {"token": user["token"]}})
     me = portal.get_me(db, user)["body"]["user"]
     return ok({"access_token": user["token"], "user": me, "next_test_id": next_test(db, user, link.get("assessment_id"))})
 
@@ -204,9 +225,11 @@ def create(db, user, body):
 
     assessment_id = data.get("assessment_id") or None
     if assessment_id:
-        assessment = db["Assessment"].find_one({"id": assessment_id}, {"id": 1, "status": 1})
+        assessment = db["Assessment"].find_one({"id": assessment_id}, {"id": 1, "status": 1, "audience": 1, "university_ids": 1})
         if not assessment or (not portal.is_staff(user) and assessment.get("status") != "published"):
             return error(400, "Choose a test from the list")
+        if assessment.get("audience", "all_students") != "all_students" and university_id not in (assessment.get("university_ids") or []):
+            return error(400, f"That test isn't assigned to {university['name']}'s students. Pick another test or add the university to the test first.")
 
     now = time.time()
     link = {
@@ -260,6 +283,38 @@ def list_links(db, user, query_params):
     return ok({"links": [view(db, l, universities, signups, enrolled) for l in links]})
 
 
+def update_link(db, user, link_id, body):
+    link = db["InviteLink"].find_one({"id": link_id})
+    if not link:
+        return error(404, "Signup link not found")
+    _, problem = portal.scope_university(db, user, link.get("university_id"))
+    if problem:
+        return problem
+    data = portal.parse_body(body) or {}
+    updates = {}
+    if "expires_days" in data:
+        updates["expires_at"] = time.time() + portal.parse_int(data.get("expires_days"), 30, 1, 365) * DAY
+    if data.get("active") is True:
+        updates["revoked"] = False
+    for field, limit in (("label", 80), ("batch", 40), ("department", 80)):
+        if field in data:
+            updates[field] = portal.clean(data.get(field), limit)
+    if "assessment_id" in data:
+        assessment_id = data.get("assessment_id") or None
+        if assessment_id:
+            a = db["Assessment"].find_one({"id": assessment_id}, {"id": 1, "status": 1, "audience": 1, "university_ids": 1})
+            if not a or (not portal.is_staff(user) and a.get("status") != "published"):
+                return error(400, "Choose a test from the list")
+            if a.get("audience", "all_students") != "all_students" and link["university_id"] not in (a.get("university_ids") or []):
+                return error(400, "That test isn't assigned to this university's students")
+        updates["assessment_id"] = assessment_id
+    if updates:
+        db["InviteLink"].update_one({"id": link_id}, {"$set": {**updates, "updated_by": user.get("email"), "updated_at": time.time()}})
+    link = db["InviteLink"].find_one({"id": link_id})
+    universities = {u["id"]: u for u in db["University"].find({"id": link["university_id"]}, {"id": 1, "name": 1, "max_students": 1})}
+    return ok({"link": view(db, link, universities, {}, {})})
+
+
 def revoke(db, user, link_id):
     link = db["InviteLink"].find_one({"id": link_id})
     if not link:
@@ -289,4 +344,7 @@ def handle_managers(db, method, path, query_params, body_data, user):
     match = re.fullmatch(r"/invite-links/([\w-]+)/revoke", path)
     if match and method == "POST":
         return revoke(db, user, match.group(1))
+    match = re.fullmatch(r"/invite-links/([\w-]+)", path)
+    if match and method == "PUT":
+        return update_link(db, user, match.group(1), body_data)
     return None

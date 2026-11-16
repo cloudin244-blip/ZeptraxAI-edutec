@@ -20,7 +20,7 @@ export default function AnswerKey() {
         title={`Answer key: ${data.assessment.title}`}
         description={<TestFacts test={data.assessment} />}
         action={
-          <Link to="/results" className="text-sm text-primary hover:underline">
+          <Link to={`/results?test=${id}`} className="text-sm text-primary hover:underline">
             ← Test results
           </Link>
         }

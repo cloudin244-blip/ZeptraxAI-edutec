@@ -18684,6 +18684,10 @@ const BF = P.createContext(),
                 try {
                     a(!0);
                     const A = await ve.auth.me();
+                    if (zptStudentBlocked(A)) {
+                        window.location.replace(ZPT_PORTAL_HOME);
+                        return
+                    }
                     n(A), i(!0), a(!1), p(!0)
                 } catch (A) {
                     console.error("User auth check failed:", A), a(!1), i(!1), p(!0), (A.status === 401 || A.status === 403) && f({
@@ -24852,7 +24856,15 @@ function zptIsAdmin(e) {
     return !!e && (e.email === Loe || e.role === "admin" || e.role === "super_admin")
 }
 
+// Students use the University Portal only (dashboard, tests, projects, profile)
+const ZPT_PORTAL_HOME = "/portal/#/home";
+
+function zptStudentBlocked(e) {
+    return !!e && e.role === "student" && /^\/(dashboard|courses|learn|community|refer-and-earn|resources|more|schedule-class|write-blog)(\/|$)/.test(window.location.pathname)
+}
+
 function zptAfterLogin(e) {
+    if (e && e.role === "student") return ZPT_PORTAL_HOME;
     let t = null;
     try {
         t = new URLSearchParams(window.location.search).get("from_url")
@@ -26367,10 +26379,16 @@ function oae() {
         }
         d(!0);
         try {
-            await ve.auth.register({
+            const zr = await ve.auth.register({
                 email: n,
                 password: i
-            }), t("otp")
+            });
+            // No verification email on this server: the account is ready, sign straight in
+            if (zr && zr.access_token && zr.user && zr.user.verified) {
+                ve.auth.setToken(zr.access_token), window.location.href = zptAfterLogin(zr.user);
+                return
+            }
+            t("otp")
         } catch (A) {
             g(A.message || "Registration failed")
         }

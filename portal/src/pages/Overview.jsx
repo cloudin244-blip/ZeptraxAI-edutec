@@ -19,13 +19,14 @@ export default function Overview() {
           <Stat label="Universities" value={data.universities} />
           <Stat label="Registered students" value={data.students} />
           <Stat label="University admins" value={data.university_admins} />
-          <Stat label="Pending student invitations" value={data.pending_invitations} />
+          <Stat label="Active signup links" value={data.active_links} hint={data.inactive_students ? `${data.inactive_students} deactivated students` : undefined} />
         </div>
         <Steps
           steps={[
             ["Add a university", "Set its short code and how many students it may onboard.", "/universities"],
             ["Invite the university admin", "Create a one-time admin link from the university's row and send it to the coordinator.", "/universities"],
-            ["Students join", "The admin (or you) generates bulk invitation links; each student registers with their own link.", "/invitations"],
+            ["Share a signup link", "Create the university's signup link and share it with its students. Each one registers and goes straight to the test.", "/invitations"],
+            ["Follow the results", "See test results, malpractice flags and project marks under Tests and Projects.", "/results"],
           ]}
         />
       </>
@@ -38,14 +39,14 @@ export default function Overview() {
       <PageHeader title={data.university?.name || "Your university"} description="Your students on the ZeptraAI University Portal." />
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat label="Registered students" value={data.students} hint={limit ? `Limit: ${limit} students` : undefined} />
-        <Stat label="Pending invitations" value={data.pending_invitations} />
+        <Stat label="Active signup links" value={data.active_links} />
         <Stat label="Complete profiles" value={data.profiles_complete} hint={data.students ? `${Math.round((100 * data.profiles_complete) / data.students)}% of students` : undefined} />
       </div>
       <Steps
         steps={[
-          ["Generate invitations", "Create one link per student for a department and batch, then download the CSV.", "/invitations"],
-          ["Share the links", "Send each student their own link. Every link works once and expires."],
-          ["Track your students", "See who registered and whose profile is complete.", "/students"],
+          ["Create your signup link", "One link for your university, optionally for a branch and batch, and the test students take after signing up.", "/invitations"],
+          ["Share it", "Post it in your class WhatsApp group or email it. Every student signs up with their own details."],
+          ["Track your students", "See who registered, their test results and project submissions.", "/students"],
         ]}
       />
     </>

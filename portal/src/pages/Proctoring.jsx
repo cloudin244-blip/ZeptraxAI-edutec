@@ -317,7 +317,7 @@ export function useProctoring({ attemptId, proctor, enabled, initialWarnings, li
   }, [watching, proctor, report, done]);
 
   const cameraView = watching && stream && (
-    <div className="fixed bottom-4 right-4 z-30 w-40 overflow-hidden rounded-lg border border-border bg-black shadow-lg">
+    <div className="fixed right-2 top-20 z-30 w-20 overflow-hidden rounded-lg border border-border bg-black shadow-lg sm:bottom-4 sm:right-4 sm:top-auto sm:w-40">
       <video ref={video} muted playsInline className="aspect-[4/3] w-full -scale-x-100 object-cover" />
       <p className="flex items-center gap-1.5 bg-card px-2 py-1 text-[11px] text-muted">
         <span className="inline-block h-2 w-2 rounded-full bg-red-500" /> Proctoring on

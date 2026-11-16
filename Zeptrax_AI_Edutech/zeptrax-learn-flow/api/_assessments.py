@@ -267,6 +267,8 @@ def list_for_managers(db, user):
     for a in db["Assessment"].find({}).sort("created_at", 1):
         if not is_staff(user) and a.get("status") != "published":
             continue
+        if university_id and a.get("audience", "all_students") != "all_students" and university_id not in (a.get("university_ids") or []):
+            continue
         student_filter = {"role": "student"}
         if a.get("audience") == "all_students":
             if university_id:
@@ -298,9 +300,13 @@ def results(db, user, assessment_id, query_params):
         university_id = user.get("university_id")
         if requested and requested != university_id:
             return error(403, "You can only see your own university's results")
+        if assessment.get("audience", "all_students") != "all_students" and university_id not in (assessment.get("university_ids") or []):
+            return error(403, "This test isn't assigned to your university")
     student_filter = {"role": "student", **({"university_id": university_id} if university_id else {})}
     names = {u["id"]: u["name"] for u in db["University"].find({}, {"id": 1, "name": 1})}
-    attempts = {a["user_id"]: expire_if_overdue(db, a) for a in db["AssessmentAttempt"].find({"assessment_id": assessment_id})}
+    attempts = {a["user_id"]: expire_if_overdue(db, a) for a in db["AssessmentAttempt"].find(
+        {"assessment_id": assessment_id, **({"university_id": university_id} if university_id else {})},
+        {"question_order": 0, "option_orders": 0, "events": 0})}
     rows = []
     for s in db["User"].find(student_filter):
         if assessment.get("audience") != "all_students" and s.get("university_id") not in (assessment.get("university_ids") or []):

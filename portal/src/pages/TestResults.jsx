@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { portal, query } from "../api.js";
 import { roleOf, useAuth } from "../auth.jsx";
@@ -34,6 +34,9 @@ export default function TestResults() {
   const [tests, testsError] = useLoad(() => portal.get("/assessments"), []);
   const [params] = useSearchParams();
   const [testId, setTestId] = useState(params.get("test") || "");
+  useEffect(() => {
+    if (params.get("test")) setTestId(params.get("test"));
+  }, [params]);
   const [universityId, setUniversityId] = useState("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");

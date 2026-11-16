@@ -96,7 +96,7 @@ export default function App() {
     <Routes>
       <Route path="/register" element={<Register />} />
       <Route path="/join" element={<Join />} />
-      <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/login" element={user ? <Navigate to={location.state?.from || "/"} replace /> : <Login />} />
       {/* The exam screen is full-width, without the sidebar */}
       <Route path="/tests/:id/take" element={user ? <TakeTest /> : <Navigate to="/login" replace />} />
       <Route path="/*" element={user ? <Shell /> : <Navigate to="/login" replace state={{ from: location.pathname }} />} />
