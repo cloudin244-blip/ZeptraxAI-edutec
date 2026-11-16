@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { portal } from "../api.js";
 import { Badge, Button, Card, ErrorText, Loading, Modal, PageHeader, useLoad } from "../components/ui.jsx";
 
@@ -24,6 +24,16 @@ export default function MyTests() {
   const [data, error] = useLoad(() => portal.get("/assessments"), []);
   const [confirming, setConfirming] = useState(null);
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const startId = params.get("start");
+
+  useEffect(() => {
+    if (!data || !startId) return;
+    const test = data.assessments.find((t) => t.id === startId);
+    setParams({}, { replace: true });
+    if (test?.attempt.status === "not_started") setConfirming(test);
+    else if (test?.attempt.status === "in_progress") navigate(`/tests/${test.id}/take`);
+  }, [data, startId, setParams, navigate]);
 
   if (error) return <ErrorText>{error}</ErrorText>;
   if (!data) return <Loading />;

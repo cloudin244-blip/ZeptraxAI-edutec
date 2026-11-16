@@ -3,10 +3,10 @@ import { login } from "../api.js";
 import { useAuth } from "../auth.jsx";
 import { Button, Card, ErrorText, Field } from "../components/ui.jsx";
 
-export function AuthLayout({ title, subtitle, children }) {
+export function AuthLayout({ title, subtitle, children, wide }) {
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md">
+      <div className={`w-full ${wide ? "max-w-2xl" : "max-w-md"}`}>
         <div className="mb-6 text-center">
           <p className="text-2xl font-bold">
             Zeptra<span className="text-primary">AI</span> <span className="text-accent">Edutech</span>
@@ -35,7 +35,7 @@ export default function Login() {
     setBusy(true);
     setError("");
     try {
-      const { access_token } = await login(email, password);
+      const { access_token } = await login(email.trim(), password);
       await signIn(access_token);
     } catch (err) {
       setError(err.message);
@@ -57,7 +57,7 @@ export default function Login() {
           Log in
         </Button>
         <p className="text-center text-xs text-muted">
-          Students and university coordinators join with the invitation link they received. New here? Open your invitation link to register.
+          New here? Students register with the signup link shared by their university or ZeptraAI.
         </p>
       </form>
     </AuthLayout>

@@ -100,11 +100,13 @@ def pending_filter(now):
 
 def program_titles(db):
     """slug -> title for every catalog program, including hidden ones (for display)"""
-    return {p["slug"]: p["title"] for p in db["CatalogProgram"].find({}, {"slug": 1, "title": 1})}
+    return core.cached("programs:titles", 60, lambda: {
+        p["slug"]: p["title"] for p in db["CatalogProgram"].find({}, {"slug": 1, "title": 1})})
 
 
 def choosable_programs(db):
-    return {p["slug"] for p in db["CatalogProgram"].find({"visible": True}, {"slug": 1})}
+    return core.cached("programs:visible", 60, lambda: {
+        p["slug"] for p in db["CatalogProgram"].find({"visible": True}, {"slug": 1})})
 
 
 def check_program(db, slug, required):
@@ -157,6 +159,7 @@ def update_profile(db, user, body):
     if updates:
         updates["updated_date"] = time.time()
         db["User"].update_one({"id": user["id"]}, {"$set": updates})
+        core.forget_user(user.get("token"))
     return get_me(db, db["User"].find_one({"id": user["id"]}))
 
 
@@ -448,6 +451,7 @@ def save_university(db, user, body, university_id=None):
         uni = {"id": str(uuid.uuid4()), "code": code, "status": "active", "max_students": None,
                "created_by": user.get("email"), "created_at": time.time(), **updates}
         db["University"].insert_one(uni)
+    core.uncache("active_universities")
     uni = core.serialize_doc(uni)
     uni.pop("_id", None)
     return ok({"university": uni}, 200 if university_id else 201)
@@ -475,7 +479,7 @@ def list_students(db, user, query_params):
             "university_id": s.get("university_id"), "university_name": names.get(s.get("university_id"), ""),
             "department": s.get("department", ""), "batch": s.get("batch", ""),
             "registration_number": s.get("registration_number", ""), "graduation_year": s.get("graduation_year", ""),
-            "phone": s.get("phone", ""), "status": s.get("status", "active"),
+            "phone": s.get("phone", ""), "degree": s.get("degree", ""), "status": s.get("status", "active"),
             "profile_completion": profile_completion(s), "created_at": s.get("created_at"),
             "program_slug": s.get("program_slug", ""), "program_title": titles.get(s.get("program_slug"), s.get("program_slug", "")),
         })
@@ -549,8 +553,14 @@ def overview(db, user):
 
 # ---------------------------------------------------------------- router
 
-def handle(db, method, path, query_params, body_data, user):
+def handle(db, method, path, query_params, body_data, user, headers=None):
     path = path.rstrip("/") or "/"
+    import _signup_links
+
+    # Public: shareable signup links
+    routed = _signup_links.handle_public(db, method, path, body_data, headers or {})
+    if routed is not None:
+        return routed
 
     # Public
     if path == "/invitations/validate" and method == "POST":
@@ -568,7 +578,11 @@ def handle(db, method, path, query_params, body_data, user):
 
     if path == "/catalog" or path.startswith("/catalog/"):
         import _catalog
-        return _catalog.handle(db, method, path, body_data, user)
+        response = _catalog.handle(db, method, path, body_data, user)
+        if method != "GET":
+            core.uncache("programs:")
+            core.uncache("public_catalog")
+        return response
 
     import _assessments
     routed = _assessments.handle(db, method, path, query_params, body_data, user)
@@ -585,6 +599,9 @@ def handle(db, method, path, query_params, body_data, user):
     if not (is_staff(user) or user.get("role") == UNIVERSITY_ADMIN):
         return error(403, "Not allowed")
 
+    routed = _signup_links.handle_managers(db, method, path, query_params, body_data, user)
+    if routed is not None:
+        return routed
     if path == "/overview" and method == "GET":
         return overview(db, user)
     if path == "/universities" and method == "GET":

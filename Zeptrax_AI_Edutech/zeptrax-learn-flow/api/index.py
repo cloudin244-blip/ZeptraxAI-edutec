@@ -145,61 +145,19 @@ class handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query_params = urllib.parse.parse_qs(parsed.query)
         
-        # Intercept Social Logins (Google, GitHub, Facebook, LinkedIn)
-        social_match = re.match(r"^/api/apps/auth(?:/([^/]+))?/login$", parsed.path)
-        if social_match:
-            from_url_list = query_params.get("from_url", [])
-            from_url = from_url_list[0] if from_url_list else "/"
-            
-            # Generate or fetch a mock/registered token
-            mock_token = "4756938a25abc81883c3619b5cc8abcd"
-            
-            # If MongoDB is connected, let's find or create a mock user for this provider
-            if handle_db_request:
-                try:
-                    database = _db_router.db
-                    if database is not None:
-                        provider = social_match.group(1) or "google"
-                        email = f"social_{provider}@zeptrax.in"
-                        user = database["User"].find_one({"email": email})
-                        if user:
-                            mock_token = user.get("token", mock_token)
-                        else:
-                            mock_token = uuid.uuid4().hex
-                            new_user = {
-                                "id": str(uuid.uuid4()),
-                                "email": email,
-                                "name": f"{provider.capitalize()} User",
-                                "role": "user",
-                                "token": mock_token,
-                                "created_at": time.time(),
-                                "app_id": query_params.get("app_id", ["6a58811b763e4b993e2b1bed"])[0]
-                            }
-                            database["User"].insert_one(new_user)
-                except Exception as db_err:
-                    print(f"Error in social login database check: {db_err}")
-            
-            # Parse from_url and append access_token
-            parsed_from = urlparse(from_url)
-            sep = "&" if parsed_from.query else "?"
-            redirect_url = f"{from_url}{sep}access_token={mock_token}"
-            
+        # Social sign-in (Google, GitHub, Facebook, LinkedIn) is not offered. Accounts are created with an
+        # email and password only; students register through their university's signup link.
+        if re.match(r"^/api/apps/auth(?:/([^/]+))?/login$", parsed.path):
             self.send_response(302)
-            self.send_header("Location", redirect_url)
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Location", "/login")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             return
 
         if handle_db_request:
             db_response = handle_db_request("GET", parsed.path, query_params, None, self.headers)
             if db_response is not None:
-                self.send_response(db_response["status"])
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-                self.end_headers()
-                self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
+                self._send_db_response(db_response)
                 return
         
         # File fallback: Try to serve static mock files from disk
@@ -258,6 +216,23 @@ class handler(BaseHTTPRequestHandler):
             "db_connected": getattr(_db_router, "db", None) is not None,
             "headers": dict(self.headers)
         }).encode('utf-8'))
+
+    def _send_db_response(self, db_response):
+        payload = json.dumps(db_response["body"], separators=(",", ":")).encode("utf-8")
+        self.send_response(db_response["status"])
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        extra = db_response.get("headers") or {}
+        # Personal data must never be cached by a CDN or shared proxy; public responses say otherwise
+        if "Cache-Control" not in extra:
+            self.send_header("Cache-Control", "no-store")
+        for key, value in extra.items():
+            self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(payload)
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -319,13 +294,7 @@ class handler(BaseHTTPRequestHandler):
         if handle_db_request:
             db_response = handle_db_request("POST", parsed.path, query_params, body_data, self.headers)
             if db_response is not None:
-                self.send_response(db_response["status"])
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-                self.end_headers()
-                self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
+                self._send_db_response(db_response)
                 return
 
         # File fallback for POST: Try to serve static mock files from disk
@@ -388,13 +357,7 @@ class handler(BaseHTTPRequestHandler):
         if handle_db_request:
             db_response = handle_db_request("PUT", parsed.path, query_params, body_data, self.headers)
             if db_response is not None:
-                self.send_response(db_response["status"])
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-                self.end_headers()
-                self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
+                self._send_db_response(db_response)
                 return
         self.send_response(404)
         self.end_headers()
@@ -407,13 +370,7 @@ class handler(BaseHTTPRequestHandler):
         if handle_db_request:
             db_response = handle_db_request("DELETE", parsed.path, query_params, body_data, self.headers)
             if db_response is not None:
-                self.send_response(db_response["status"])
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-                self.end_headers()
-                self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
+                self._send_db_response(db_response)
                 return
         self.send_response(404)
         self.end_headers()
@@ -426,13 +383,7 @@ class handler(BaseHTTPRequestHandler):
         if handle_db_request:
             db_response = handle_db_request("PATCH", parsed.path, query_params, body_data, self.headers)
             if db_response is not None:
-                self.send_response(db_response["status"])
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-                self.end_headers()
-                self.wfile.write(json.dumps(db_response["body"]).encode('utf-8'))
+                self._send_db_response(db_response)
                 return
         self.send_response(404)
         self.end_headers()

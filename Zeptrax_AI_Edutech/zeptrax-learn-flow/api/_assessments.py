@@ -36,8 +36,35 @@ def assigned_to(assessment, user):
     return audience == "all_students" or user.get("university_id") in (assessment.get("university_ids") or [])
 
 
+QUESTION_ID = re.compile(r"[\w-]{1,64}")
+
+
+def question_count(db, assessment_id):
+    return core.cached(f"qcount:{assessment_id}", 30,
+                       lambda: db["AssessmentQuestion"].count_documents({"assessment_id": assessment_id}))
+
+
+def locked_questions(db, assessment_id):
+    """Questions of a test that students have started. They can't change any more, so each server
+    instance loads them once instead of once per student."""
+    return core.cached(f"questions:{assessment_id}", 600,
+                       lambda: {q["id"]: q for q in db["AssessmentQuestion"].find({"assessment_id": assessment_id})})
+
+
+def published_assessments(db):
+    return core.cached("published_assessments", 10,
+                       lambda: list(db["Assessment"].find({"status": "published"}).sort("created_at", 1)))
+
+
+def forget_test(assessment_id=None):
+    core.uncache("published_assessments")
+    if assessment_id:
+        core.uncache(f"qcount:{assessment_id}")
+        core.uncache(f"questions:{assessment_id}")
+
+
 def total_marks(db, assessment):
-    return db["AssessmentQuestion"].count_documents({"assessment_id": assessment["id"]}) * assessment.get("marks_per_question", 1)
+    return question_count(db, assessment["id"]) * assessment.get("marks_per_question", 1)
 
 
 def finalize(db, attempt, now=None):
@@ -49,7 +76,7 @@ def finalize(db, attempt, now=None):
     negative = assessment.get("negative_marks", 0)
     answers = attempt.get("answers", {})
     correct = wrong = 0
-    for q in db["AssessmentQuestion"].find({"assessment_id": assessment["id"]}, {"id": 1, "answer": 1}):
+    for q in locked_questions(db, assessment["id"]).values():
         chosen = answers.get(q["id"])
         if chosen is None:
             continue
@@ -86,28 +113,34 @@ def result_view(assessment, attempt):
     return view
 
 
-def summary(db, assessment):
-    return {
+def summary(db, assessment, with_attempts=True):
+    out = {
         "id": assessment["id"], "title": assessment["title"], "description": assessment.get("description", ""),
         "duration_minutes": assessment["duration_minutes"], "marks_per_question": assessment.get("marks_per_question", 1),
         "negative_marks": assessment.get("negative_marks", 0), "required": assessment.get("required", False),
-        "question_count": db["AssessmentQuestion"].count_documents({"assessment_id": assessment["id"]}),
+        "question_count": question_count(db, assessment["id"]),
         "total_marks": total_marks(db, assessment), "status": assessment.get("status"),
         "audience": assessment.get("audience", "all_students"), "university_ids": assessment.get("university_ids") or [],
         "show_score_to_students": assessment.get("show_score_to_students", True),
-        "attempts": db["AssessmentAttempt"].count_documents({"assessment_id": assessment["id"]}),
     }
+    if with_attempts:
+        out["attempts"] = db["AssessmentAttempt"].count_documents({"assessment_id": assessment["id"]})
+    return out
 
 
 # ---------------------------------------------------------------- students
 
 def list_for_student(db, user):
     items = []
-    for a in db["Assessment"].find({"status": "published"}).sort("created_at", 1):
-        if not assigned_to(a, user):
-            continue
-        attempt = expire_if_overdue(db, db["AssessmentAttempt"].find_one({"assessment_id": a["id"], "user_id": user["id"]}))
-        item = summary(db, a)
+    tests = [a for a in published_assessments(db) if assigned_to(a, user)]
+    attempts = {a["assessment_id"]: a for a in db["AssessmentAttempt"].find(
+        {"user_id": user["id"], "assessment_id": {"$in": [t["id"] for t in tests]}},
+        {"question_order": 0, "option_orders": 0, "events": 0})} if tests else {}
+    for a in tests:
+        attempt = attempts.get(a["id"])
+        if attempt and attempt["status"] == "in_progress" and time.time() > attempt["deadline"] + GRACE_SECONDS:
+            attempt = expire_if_overdue(db, db["AssessmentAttempt"].find_one({"id": attempt["id"]}))
+        item = summary(db, a, with_attempts=False)
         if not attempt:
             item["attempt"] = {"status": "not_started"}
         elif attempt["status"] == "in_progress":
@@ -120,7 +153,7 @@ def list_for_student(db, user):
 
 def paper(db, assessment, attempt):
     """Questions in this attempt's order, options in this attempt's order, without correct answers"""
-    questions = {q["id"]: q for q in db["AssessmentQuestion"].find({"assessment_id": assessment["id"]})}
+    questions = locked_questions(db, assessment["id"])
     out = []
     for number, qid in enumerate(attempt["question_order"], 1):
         q = questions[qid]
@@ -132,7 +165,7 @@ def paper(db, assessment, attempt):
         if original is not None:
             shown[qid] = attempt["option_orders"][qid].index(original)
     return ok({
-        "attempt_id": attempt["id"], "assessment": summary(db, assessment), "deadline": attempt["deadline"],
+        "attempt_id": attempt["id"], "assessment": summary(db, assessment, with_attempts=False), "deadline": attempt["deadline"],
         "server_time": time.time(), "questions": out, "answers": shown, "tab_switches": attempt.get("tab_switches", 0),
     })
 
@@ -145,11 +178,12 @@ def start(db, user, assessment_id):
     if attempt and attempt["status"] == "submitted":
         return ok({"submitted": True, "result": result_view(assessment, attempt)})
     if not attempt:
-        qids = [q["id"] for q in db["AssessmentQuestion"].find({"assessment_id": assessment_id}, {"id": 1, "options": 1})]
+        questions = list(db["AssessmentQuestion"].find({"assessment_id": assessment_id}, {"id": 1, "options": 1}))
+        qids = [q["id"] for q in questions]
         if not qids:
             return error(400, "This test has no questions yet.")
         option_orders = {}
-        for q in db["AssessmentQuestion"].find({"assessment_id": assessment_id}, {"id": 1, "options": 1}):
+        for q in questions:
             perm = list(range(len(q["options"])))
             _rng.shuffle(perm)
             option_orders[q["id"]] = perm
@@ -163,7 +197,7 @@ def start(db, user, assessment_id):
         }
         try:
             db["AssessmentAttempt"].insert_one(attempt)
-        except Exception:
+        except core.DuplicateKeyError:
             # Two tabs pressed Start together: the unique index lets only one attempt exist
             attempt = db["AssessmentAttempt"].find_one({"assessment_id": assessment_id, "user_id": user["id"]})
     return paper(db, assessment, attempt)
@@ -177,9 +211,6 @@ def own_attempt(db, user, attempt_id):
 
 
 def save_answer(db, user, attempt_id, body):
-    attempt, problem = own_attempt(db, user, attempt_id)
-    if problem:
-        return problem
     try:
         data = json.loads(body) if body else {}
     except ValueError:
@@ -187,12 +218,18 @@ def save_answer(db, user, attempt_id, body):
     if not isinstance(data, dict):
         return error(400, "Invalid answer")
     qid, shown = data.get("question_id"), data.get("option")
-    if attempt["status"] != "in_progress" or time.time() > attempt["deadline"] + GRACE_SECONDS:
-        expire_if_overdue(db, attempt)
-        return error(409, "Time is up — your answers have been submitted.")
-    if qid not in attempt["option_orders"]:
+    if not isinstance(qid, str) or not QUESTION_ID.fullmatch(qid):
         return error(400, "Unknown question")
-    perm = attempt["option_orders"][qid]
+    attempt = db["AssessmentAttempt"].find_one(
+        {"id": attempt_id}, {"user_id": 1, "status": 1, "deadline": 1, f"option_orders.{qid}": 1})
+    if not attempt or attempt["user_id"] != user["id"]:
+        return error(404, "Attempt not found")
+    if attempt["status"] != "in_progress" or time.time() > attempt["deadline"] + GRACE_SECONDS:
+        expire_if_overdue(db, db["AssessmentAttempt"].find_one({"id": attempt_id}))
+        return error(409, "Time is up — your answers have been submitted.")
+    perm = (attempt.get("option_orders") or {}).get(qid)
+    if perm is None:
+        return error(400, "Unknown question")
     if shown is None:
         original = None
     elif isinstance(shown, int) and 0 <= shown < len(perm):
@@ -217,7 +254,7 @@ def record_event(db, user, attempt_id, body):
     if problem:
         return problem
     if attempt["status"] == "in_progress":
-        db["AssessmentAttempt"].update_one({"id": attempt_id}, {"$inc": {"tab_switches": 1}, "$push": {"events": {"type": "tab_hidden", "at": time.time()}}})
+        db["AssessmentAttempt"].update_one({"id": attempt_id}, {"$inc": {"tab_switches": 1}, "$push": {"events": {"$each": [{"type": "tab_hidden", "at": time.time()}], "$slice": -200}}})
     return ok({"tab_switches": attempt.get("tab_switches", 0) + 1})
 
 
@@ -363,6 +400,7 @@ def create_test(db, user, body):
            "show_score_to_students": True, "description": "", "created_by": user.get("email"), "created_at": time.time(), **values}
     doc["status"] = "draft"  # new tests start as drafts until they have questions
     db["Assessment"].insert_one(doc)
+    forget_test(doc["id"])
     return ok({"assessment": summary(db, doc)}, 201)
 
 
@@ -384,6 +422,7 @@ def update_test(db, user, assessment_id, body):
     if started and any(k in values for k in ("marks_per_question", "negative_marks")):
         return error(409, "Students have already taken this test, so its marking can't change.")
     db["Assessment"].update_one({"id": assessment_id}, {"$set": {**values, "updated_by": user.get("email"), "updated_date": time.time()}})
+    forget_test(assessment_id)
     return ok({"assessment": summary(db, db["Assessment"].find_one({"id": assessment_id}))})
 
 
@@ -393,6 +432,7 @@ def delete_test(db, assessment_id):
     if not db["Assessment"].delete_one({"id": assessment_id}).deleted_count:
         return error(404, "Test not found")
     db["AssessmentQuestion"].delete_many({"assessment_id": assessment_id})
+    forget_test(assessment_id)
     return ok({"deleted": True})
 
 
@@ -441,6 +481,7 @@ def save_question(db, assessment_id, body, question_id=None):
         last = list(coll.find({"assessment_id": assessment_id}, {"order": 1}).sort("order", -1).limit(1))
         question_id = str(uuid.uuid4())
         coll.insert_one({"id": question_id, "assessment_id": assessment_id, "order": (last[0]["order"] + 1) if last else 1, **values})
+    forget_test(assessment_id)
     return answer_key(db, {"role": "super_admin"}, assessment_id)
 
 
@@ -455,6 +496,7 @@ def delete_question(db, assessment_id, question_id):
     assessment = db["Assessment"].find_one({"id": assessment_id})
     if assessment and assessment.get("status") == "published" and not db["AssessmentQuestion"].count_documents({"assessment_id": assessment_id}):
         db["Assessment"].update_one({"id": assessment_id}, {"$set": {"status": "draft"}})
+    forget_test(assessment_id)
     return answer_key(db, {"role": "super_admin"}, assessment_id)
 
 

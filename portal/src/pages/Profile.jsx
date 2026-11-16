@@ -47,8 +47,8 @@ export default function Profile() {
             <Field label="University">
               <input className="input opacity-60" value={user.university?.name || "–"} disabled />
             </Field>
-            <Field label="Department · Batch">
-              <input className="input opacity-60" value={[user.department, user.batch].filter(Boolean).join(" · ") || "–"} disabled />
+            <Field label="Degree · Branch · Batch">
+              <input className="input opacity-60" value={[user.degree, user.department, user.batch].filter(Boolean).join(" · ") || "–"} disabled />
             </Field>
             {user.role === "student" && programs?.length > 0 && (
               <div className="sm:col-span-2">

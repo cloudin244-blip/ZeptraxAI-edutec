@@ -2,6 +2,7 @@ import { useState } from "react";
 import { portal, query } from "../api.js";
 import { roleOf, useAuth } from "../auth.jsx";
 import { Badge, Button, Card, ErrorText, Field, formatDate, Loading, Modal, Notice, PageHeader, Table, useLoad } from "../components/ui.jsx";
+import SignupLinks from "./SignupLinks.jsx";
 
 export const inviteLink = (token) => `${window.location.origin}/portal/#/register?token=${encodeURIComponent(token)}`;
 
@@ -71,11 +72,7 @@ export default function Invitations() {
 
   return (
     <>
-      <PageHeader
-        title={staff ? "Invitations" : "Bulk invitations"}
-        description="Each student gets their own single-use link that expires. Links are only shown when you create them, so download the CSV straight away."
-        action={<Button onClick={() => setCreating(true)}>Generate student invitations</Button>}
-      />
+      <PageHeader title="Signup links" description="Invite students to register and take their test." />
       {staff && universities && (
         <div className="mb-4 max-w-xs">
           <select className="input" value={universityId} onChange={(e) => setUniversityId(e.target.value)} aria-label="Filter by university">
@@ -88,8 +85,22 @@ export default function Invitations() {
           </select>
         </div>
       )}
-      <ErrorText>{error}</ErrorText>
-      <Card>{data ? <Table columns={columns} rows={data.campaigns} empty="No invitations yet." /> : !error && <Loading />}</Card>
+      <SignupLinks staff={staff} universities={universities?.universities || []} universityId={universityId} />
+      <section>
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Single-use invitation links</h2>
+            <p className="text-sm text-muted">
+              A personal link per student, usable once. Links are only shown when you create them, so download the CSV straight away.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={() => setCreating(true)}>
+            Generate single-use links
+          </Button>
+        </div>
+        <ErrorText>{error}</ErrorText>
+        <Card>{data ? <Table columns={columns} rows={data.campaigns} empty="No single-use invitations yet." /> : !error && <Loading />}</Card>
+      </section>
       {creating && (
         <BulkForm
           staff={staff}

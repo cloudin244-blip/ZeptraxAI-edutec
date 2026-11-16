@@ -24,7 +24,7 @@ export default function Students() {
       (!department || s.department === department) &&
       (!batch || s.batch === batch) &&
       (!program || (program === "none" ? !s.program_slug : s.program_slug === program)) &&
-      (!q || [s.full_name, s.email, s.registration_number].some((v) => (v || "").toLowerCase().includes(q)))
+      (!q || [s.full_name, s.email, s.registration_number, s.phone].some((v) => (v || "").toLowerCase().includes(q)))
   );
 
   const columns = [
@@ -35,12 +35,14 @@ export default function Students() {
         <div>
           <p className="font-medium">{s.full_name || "–"}</p>
           <p className="text-xs text-muted">{s.email}</p>
+          {s.phone && <p className="text-xs text-muted">{s.phone}</p>}
         </div>
       ),
     },
     ...(staff ? [{ key: "university_name", label: "University" }] : []),
     { key: "program_title", label: "Program", render: (s) => s.program_title || <span className="text-amber-300">Not chosen</span> },
-    { key: "department", label: "Department" },
+    { key: "degree", label: "Degree" },
+    { key: "department", label: "Branch" },
     { key: "batch", label: "Batch" },
     { key: "registration_number", label: "Reg. no." },
     {
@@ -55,7 +57,7 @@ export default function Students() {
     <>
       <PageHeader title="Students" description={`${rows.length} of ${students.length} students`} />
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <input className="input" placeholder="Search name, email or reg. no." value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search students" />
+        <input className="input" placeholder="Search name, email, phone or reg. no." value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search students" />
         {staff && (
           <select className="input" value={universityId} onChange={(e) => setUniversityId(e.target.value)} aria-label="University">
             <option value="">All universities</option>
@@ -76,7 +78,7 @@ export default function Students() {
           <option value="none">Program not chosen</option>
         </select>
         <select className="input" value={department} onChange={(e) => setDepartment(e.target.value)} aria-label="Department">
-          <option value="">All departments</option>
+          <option value="">All branches</option>
           {departments.map((d) => (
             <option key={d}>{d}</option>
           ))}

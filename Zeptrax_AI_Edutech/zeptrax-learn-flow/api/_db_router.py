@@ -32,47 +32,186 @@ def load_dotenv():
 
 load_dotenv()
 
-# Global MongoDB Client & DB connection
+try:
+    from pymongo.errors import PyMongoError, DuplicateKeyError
+except ImportError:  # pymongo missing: the API serves static fallbacks only
+    class PyMongoError(Exception):
+        pass
+
+    class DuplicateKeyError(PyMongoError):
+        pass
+
+# Bump when INDEXES changes: each new server instance then builds the indexes once
+INDEX_VERSION = 2
+
+# (collection, keys, options). Lookups that run on every request or every exam answer must be indexed,
+# otherwise each one scans the whole collection and the database falls over under exam-day load.
+INDEXES = [
+    ("User", "email", {"unique": True}),
+    ("User", "token", {}),
+    ("User", "id", {}),
+    ("User", "university_id", {}),
+    ("User", [("role", 1), ("university_id", 1), ("created_at", -1)], {}),
+    ("User", "invite_link_id", {"sparse": True}),
+    ("Student", "id", {"unique": True}),
+    ("Course", "id", {"unique": True}),
+    ("Enrollment", "id", {"unique": True}),
+    ("Enrollment", "student_id", {}),
+    ("Enrollment", "student_email", {}),
+    ("Certificate", "certificate_code", {}),
+    ("University", "id", {"unique": True}),
+    ("University", "code", {"unique": True}),
+    ("Invitation", "token_hash", {"unique": True}),
+    ("Invitation", "campaign_id", {}),
+    ("Invitation", [("university_id", 1), ("role", 1), ("used_at", 1), ("expires_at", 1)], {}),
+    ("InvitationCampaign", "id", {}),
+    ("InvitationCampaign", [("university_id", 1), ("created_at", -1)], {}),
+    ("InviteLink", "id", {"unique": True}),
+    ("InviteLink", "code", {"unique": True}),
+    ("InviteLink", [("university_id", 1), ("created_at", -1)], {}),
+    ("Assessment", "id", {}),
+    ("Assessment", [("status", 1), ("created_at", 1)], {}),
+    ("AssessmentQuestion", "assessment_id", {}),
+    ("AssessmentQuestion", "id", {}),
+    ("AssessmentAttempt", [("assessment_id", 1), ("user_id", 1)], {"unique": True}),
+    ("AssessmentAttempt", "id", {}),
+    ("AssessmentAttempt", [("assessment_id", 1), ("university_id", 1), ("status", 1)], {}),
+    ("CatalogProgram", "slug", {}),
+    ("CatalogProgram", [("visible", 1), ("order", 1)], {}),
+    ("PortalProject", "id", {}),
+    ("ProjectSubmission", [("project_id", 1), ("user_id", 1)], {"unique": True}),
+    ("ProjectSubmission", "id", {}),
+    # Short-lived documents removed by MongoDB itself once `expires_at` passes
+    ("RateLimit", "expires_at", {"expireAfterSeconds": 0}),
+    ("AuditLog", "expires_at", {"expireAfterSeconds": 0, "sparse": True}),
+]
+
+
+def ensure_indexes(database, force=False):
+    """Create INDEXES once per INDEX_VERSION. A new server instance only pays one small read for this."""
+    meta = database["_meta"]
+    if not force:
+        marker = meta.find_one({"_id": "indexes"})
+        if marker and marker.get("version", 0) >= INDEX_VERSION:
+            return
+    failures = 0
+    for collection, keys, options in INDEXES:
+        try:
+            database[collection].create_index(keys, **options)
+        except Exception as idx_err:  # e.g. old duplicate data blocks a unique index; the rest still get built
+            failures += 1
+            print(f"[MongoDB] Index {collection}.{keys} not created: {idx_err}")
+    if not failures:
+        meta.update_one({"_id": "indexes"}, {"$set": {"version": INDEX_VERSION, "built_at": time.time()}}, upsert=True)
+    print(f"[MongoDB] Indexes checked (version {INDEX_VERSION}, {failures} failed).")
+
+
+def _connect():
+    mongo_uri = os.environ.get("MONGODB_URI")
+    if not mongo_uri:
+        print("[MongoDB] Warning: MONGODB_URI env variable is not set. Using local mock fallbacks.")
+        return None
+    from pymongo import MongoClient
+    try:
+        import certifi
+        tls_options = {"tlsCAFile": certifi.where()}
+    except ImportError:
+        tls_options = {}
+    # Many short-lived serverless instances share one Atlas cluster: keep each instance's pool small so the
+    # cluster's connection limit isn't exhausted, and fail fast (the client retries) instead of hanging.
+    client = MongoClient(
+        mongo_uri,
+        maxPoolSize=int(os.environ.get("MONGO_MAX_POOL_SIZE") or 20),
+        minPoolSize=0,
+        maxIdleTimeMS=60_000,
+        serverSelectionTimeoutMS=5_000,
+        connectTimeoutMS=5_000,
+        socketTimeoutMS=20_000,
+        waitQueueTimeoutMS=8_000,
+        retryWrites=True,
+        retryReads=True,
+        appname="zeptrax-edutech",
+        **tls_options,
+    )
+    database = client[os.environ.get("MONGODB_DB") or "zeptrax_db"]
+    try:
+        ensure_indexes(database)
+    except Exception as idx_err:
+        print(f"[MongoDB] Index check skipped: {idx_err}")
+    return database
+
+
+# Global MongoDB connection, reused by every request this server instance handles
 db = None
 try:
-    # Read MongoDB URI from environment
-    mongo_uri = os.environ.get("MONGODB_URI")
-    if mongo_uri:
-        from pymongo import MongoClient
-        try:
-            import certifi
-            tls_options = {"tlsCAFile": certifi.where()}
-        except ImportError:
-            tls_options = {}
-        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000, **tls_options)
-        db = client["zeptrax_db"]
-        # Ping check
-        client.admin.command('ping')
-        print("[MongoDB] Connected successfully to zeptrax_db.")
-
-        # Build performance indexes for high-traffic scalability
-        try:
-            db["User"].create_index("email", unique=True)
-            db["User"].create_index("token")
-            db["Student"].create_index("id", unique=True)
-            db["Course"].create_index("id", unique=True)
-            db["Enrollment"].create_index("id", unique=True)
-            db["University"].create_index("id", unique=True)
-            db["University"].create_index("code", unique=True)
-            db["Invitation"].create_index("token_hash", unique=True)
-            db["Invitation"].create_index("campaign_id")
-            db["User"].create_index("university_id")
-            db["AssessmentAttempt"].create_index([("assessment_id", 1), ("user_id", 1)], unique=True)
-            db["AssessmentQuestion"].create_index("assessment_id")
-            db["ProjectSubmission"].create_index([("project_id", 1), ("user_id", 1)], unique=True)
-            print("[MongoDB] Performance indexes built/verified successfully.")
-        except Exception as idx_err:
-            print(f"[MongoDB] Index creation warning: {idx_err}")
-    else:
-        print("[MongoDB] Warning: MONGODB_URI env variable is not set. Using local mock fallbacks.")
+    db = _connect()
 except Exception as e:
     print(f"[MongoDB] Error initializing database: {e}")
     db = None
+
+
+# ---------------------------------------------------------------- small in-process caches
+
+_cache = {}
+
+
+def cached(key, ttl, compute, keep=None):
+    """Value of compute(), reused for `ttl` seconds within this server instance (only if keep(value))"""
+    hit = _cache.get(key)
+    now = time.monotonic()
+    if hit and hit[0] > now:
+        return hit[1]
+    value = compute()
+    if keep and not keep(value):
+        return value
+    if len(_cache) > 5000:
+        _cache.clear()
+    _cache[key] = (now + ttl, value)
+    return value
+
+
+def ok_response(response):
+    return isinstance(response, dict) and response.get("status", 200) == 200
+
+
+def uncache(prefix):
+    for key in [k for k in _cache if k.startswith(prefix)]:
+        _cache.pop(key, None)
+
+
+# ---------------------------------------------------------------- rate limiting
+
+def client_ip(headers):
+    for name in ("x-real-ip", "x-forwarded-for", "x-vercel-forwarded-for"):
+        for key, val in (headers or {}).items():
+            if key.lower() == name and val:
+                return val.split(",")[0].strip()
+    return "unknown"
+
+
+def rate_limited(key, limit, window_seconds):
+    """True once `key` has been seen more than `limit` times in the current window.
+    Counted in MongoDB so every server instance shares the count. Fails open if the database hiccups."""
+    if db is None:
+        return False
+    from datetime import datetime, timezone
+    bucket = int(time.time() // window_seconds)
+    try:
+        doc = db["RateLimit"].find_one_and_update(
+            {"_id": f"{key}:{bucket}"},
+            {"$inc": {"n": 1}, "$setOnInsert": {
+                "expires_at": datetime.fromtimestamp((bucket + 1) * window_seconds + 60, tz=timezone.utc)}},
+            upsert=True,
+            return_document=True,
+        )
+        return bool(doc) and doc.get("n", 0) > limit
+    except PyMongoError as e:
+        print(f"[rate_limit] {e}")
+        return False
+
+
+def too_many(message="Too many attempts. Please wait a few minutes and try again."):
+    return {"status": 429, "body": {"error": message}, "headers": {"Retry-After": "60"}}
 
 def serialize_doc(doc):
     """Recursively serializes MongoDB documents (converts ObjectId to string)"""
@@ -124,6 +263,21 @@ OTP_WINDOW_SECONDS = 30 * 60
 OTP_TTL_SECONDS = 10 * 60
 OTP_MAX_ATTEMPTS = 5
 OTP_RESEND_SECONDS = 60
+
+# Abuse limits. Students on one campus often share a single public IP, so per-IP limits are generous.
+LOGIN_ATTEMPTS_PER_EMAIL = int(os.environ.get("LOGIN_ATTEMPTS_PER_EMAIL") or 20)   # per 15 minutes
+SIGNUPS_PER_IP = int(os.environ.get("SIGNUPS_PER_IP") or 600)                       # per 10 minutes
+
+BUSY_MESSAGE = "The server is busy right now. Please try again in a few seconds."
+
+# CDN caching for public responses that are the same for every visitor
+PUBLIC_CACHE = {"Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=600"}
+
+
+def analytics_expiry():
+    from datetime import datetime, timedelta, timezone
+    return datetime.now(timezone.utc) + timedelta(days=30)
+
 
 UNAVAILABLE = {"status": 503, "body": {"error": "Student records are temporarily unavailable. Please try again later."}}
 
@@ -383,10 +537,25 @@ def get_authorized_user(headers):
     token = auth_header.split(" ", 1)[1].strip()
     if not token:
         return None
+    # Every API call authenticates; during an exam that is one lookup per saved answer, so a signed-in
+    # user is reused for a few seconds. forget_user() drops it after the user's own record changes.
+    user = cached(f"user:{token}", USER_CACHE_SECONDS, lambda: _load_user(token))
+    return dict(user) if user else None
+
+
+USER_CACHE_SECONDS = 15
+
+
+def _load_user(token):
     user = apply_bootstrap_role(db["User"].find_one({"token": token}))
     if user and user.get("status") == "inactive":
         return None
     return serialize_doc(user)
+
+
+def forget_user(token):
+    if token:
+        _cache.pop(f"user:{token}", None)
 
 def _handle_db_request(method, path, query_params, body_data, headers):
     """
@@ -400,7 +569,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
 
     # Partner page: public university list; full student list and university edits for admins only
     if normalized == "/partner/universities" and method == "GET":
-        return partner_universities()
+        response = cached("partner_universities", 120, partner_universities, ok_response)
+        return {**response, "headers": PUBLIC_CACHE} if response["status"] == 200 else response
     if normalized == "/admin/students" and method == "GET":
         return admin_students(headers)
     if normalized == "/admin/students/university" and method == "PUT":
@@ -409,14 +579,15 @@ def _handle_db_request(method, path, query_params, body_data, headers):
     # Website catalog (programs and free courses), public read
     if path.rstrip("/") == "/api/catalog" and method == "GET":
         import _catalog
-        return _catalog.public_catalog(db)
+        response = cached("public_catalog", 30, lambda: _catalog.public_catalog(db), ok_response)
+        return {**response, "headers": PUBLIC_CACHE} if response.get("status") == 200 else response
 
     # University portal: /api/portal/...
     if path.startswith("/api/portal/"):
         if db is None:
             return UNAVAILABLE
         import _portal
-        return _portal.handle(db, method, normalized[len("/portal"):], query_params, body_data, get_authorized_user(headers))
+        return _portal.handle(db, method, normalized[len("/portal"):], query_params, body_data, get_authorized_user(headers), headers)
 
     if db is None:
         return None  # Database not initialized; fallback to static file mocks
@@ -432,6 +603,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
             email = normalize_email(user_data.get("email"))
             if not email:
                 return {"status": 400, "body": {"error": "Email is required"}}
+            if rate_limited(f"register:{client_ip(headers)}", SIGNUPS_PER_IP, 10 * 60):
+                return too_many()
             password = user_data.get("password")
             if not isinstance(password, str) or len(password) < 6:
                 return {"status": 400, "body": {"error": "Password must be at least 6 characters"}}
@@ -468,6 +641,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                 }
             }
         except Exception as e:
+            if isinstance(e, PyMongoError):
+                raise
             return {"status": 500, "body": {"error": str(e)}}
 
     # POST /apps/<appId>/auth/login
@@ -478,6 +653,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
             email = normalize_email(login_data.get("email"))
             password = login_data.get("password")
 
+            if email and rate_limited(f"login:{email}", LOGIN_ATTEMPTS_PER_EMAIL, 15 * 60):
+                return too_many("Too many sign-in attempts for this email. Please wait 15 minutes and try again.")
             user = db["User"].find_one({"email": email}) if email else None
             if not user or not check_password(user, password) or user.get("status") == "inactive":
                 return {"status": 401, "body": {"error": "Invalid email or password"}}
@@ -504,6 +681,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                 }
             }
         except Exception as e:
+            if isinstance(e, PyMongoError):
+                raise
             return {"status": 500, "body": {"error": str(e)}}
 
     # POST /apps/<appId>/auth/verify-otp
@@ -555,6 +734,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                 }
             }
         except Exception as e:
+            if isinstance(e, PyMongoError):
+                raise
             return {"status": 500, "body": {"error": str(e)}}
 
     # POST /apps/<appId>/auth/resend-otp
@@ -584,12 +765,17 @@ def _handle_db_request(method, path, query_params, body_data, headers):
     if match and method == "POST":
         try:
             log_data = json.loads(body_data) if body_data else {}
+            if not isinstance(log_data, dict):
+                log_data = {"events": log_data}
             log_data["timestamp"] = time.time()
             log_data["app_id"] = match.group(1)
             log_data["type"] = "home_visit"
+            log_data["expires_at"] = analytics_expiry()
             db["AuditLog"].insert_one(log_data)
             return {"status": 200, "body": {"ok": True}}
         except Exception as e:
+            if isinstance(e, PyMongoError):
+                raise
             return {"status": 500, "body": {"error": str(e)}}
 
     # POST /apps/<appId>/analytics/track/batch
@@ -597,11 +783,16 @@ def _handle_db_request(method, path, query_params, body_data, headers):
     if match and method == "POST":
         try:
             batch_data = json.loads(body_data) if body_data else {}
+            if not isinstance(batch_data, dict):
+                batch_data = {"events": batch_data}
             batch_data["timestamp"] = time.time()
             batch_data["app_id"] = match.group(1)
+            batch_data["expires_at"] = analytics_expiry()
             db["AuditLog"].insert_one(batch_data)
             return {"status": 200, "body": {"ok": True}}
         except Exception as e:
+            if isinstance(e, PyMongoError):
+                raise
             return {"status": 500, "body": {"error": str(e)}}
 
     # --- 3. ENTITY ENDPOINTS ---
@@ -642,9 +833,12 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                         update_data.pop(field, None)
 
                     db["User"].update_one({"id": user["id"]}, {"$set": update_data})
+                    forget_user(user.get("token"))
                     updated_user = db["User"].find_one({"id": user["id"]})
                     return {"status": 200, "body": public_user(serialize_doc(updated_user))}
                 except Exception as e:
+                    if isinstance(e, PyMongoError):
+                        raise
                     return {"status": 500, "body": {"error": str(e)}}
 
         # ACCESS CONTROL
@@ -774,6 +968,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                         inserted_docs.append(serialize_doc(doc))
                     return {"status": 200, "body": inserted_docs}
                 except Exception as e:
+                    if isinstance(e, PyMongoError):
+                        raise
                     return {"status": 500, "body": {"error": str(e)}}
 
             # Single insertion
@@ -787,6 +983,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                     collection.insert_one(doc)
                     return {"status": 200, "body": serialize_doc(doc)}
                 except Exception as e:
+                    if isinstance(e, PyMongoError):
+                        raise
                     return {"status": 500, "body": {"error": str(e)}}
 
         # C. PUT requests (Update / Bulk Update)
@@ -807,6 +1005,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                             updated_docs.append(serialize_doc(updated))
                     return {"status": 200, "body": updated_docs}
                 except Exception as e:
+                    if isinstance(e, PyMongoError):
+                        raise
                     return {"status": 500, "body": {"error": str(e)}}
 
             # Single update
@@ -821,6 +1021,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                         return {"status": 404, "body": {"error": f"Item {item_id} not found in {entity}"}}
                     return {"status": 200, "body": serialize_doc(updated)}
                 except Exception as e:
+                    if isinstance(e, PyMongoError):
+                        raise
                     return {"status": 500, "body": {"error": str(e)}}
 
         # D. DELETE requests (Delete Single / Delete Many)
@@ -845,6 +1047,8 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                     collection.delete_many(delete_filter)
                     return {"status": 200, "body": {"ok": True}}
                 except Exception as e:
+                    if isinstance(e, PyMongoError):
+                        raise
                     return {"status": 500, "body": {"error": str(e)}}
 
         # E. PATCH requests (Update Many)
@@ -860,13 +1064,19 @@ def _handle_db_request(method, path, query_params, body_data, headers):
                     collection.update_many(filter_q, {"$set": update_val})
                     return {"status": 200, "body": {"ok": True}}
                 except Exception as e:
+                    if isinstance(e, PyMongoError):
+                        raise
                     return {"status": 500, "body": {"error": str(e)}}
 
     return None  # Path did not match any database endpoints
 
 
 def handle_db_request(method, path, query_params, body_data, headers):
-    response = _handle_db_request(method, path, query_params, body_data, headers)
+    try:
+        response = _handle_db_request(method, path, query_params, body_data, headers)
+    except PyMongoError as e:
+        print(f"[db] {method} {path}: {e}")
+        response = {"status": 503, "body": {"error": BUSY_MESSAGE}, "headers": {"Retry-After": "3"}}
     body = response.get("body") if response else None
     if response and response.get("status", 200) >= 400 and isinstance(body, dict) and body.get("error") and not body.get("message"):
         body["message"] = body["error"]  # the main site's SDK displays `message`

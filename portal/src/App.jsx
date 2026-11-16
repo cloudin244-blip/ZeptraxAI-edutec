@@ -4,6 +4,7 @@ import { roleOf, useAuth } from "./auth.jsx";
 import { Loading } from "./components/ui.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
+import Join from "./pages/Join.jsx";
 import Overview from "./pages/Overview.jsx";
 import Universities from "./pages/Universities.jsx";
 import Invitations from "./pages/Invitations.jsx";
@@ -24,7 +25,7 @@ const NAV = {
   staff: [
     { to: "/overview", label: "Overview" },
     { to: "/universities", label: "Universities" },
-    { to: "/invitations", label: "Invitations" },
+    { to: "/invitations", label: "Signup links" },
     { to: "/students", label: "Students" },
     { to: "/manage-tests", label: "Tests" },
     { to: "/results", label: "Test results" },
@@ -33,7 +34,7 @@ const NAV = {
   university_admin: [
     { to: "/overview", label: "Overview" },
     { to: "/students", label: "Students" },
-    { to: "/invitations", label: "Bulk invitations" },
+    { to: "/invitations", label: "Signup links" },
     { to: "/results", label: "Test results" },
     { to: "/projects", label: "Projects" },
   ],
@@ -57,6 +58,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/register" element={<Register />} />
+      <Route path="/join" element={<Join />} />
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
       {/* The exam screen is full-width, without the sidebar */}
       <Route path="/tests/:id/take" element={user ? <TakeTest /> : <Navigate to="/login" replace />} />

@@ -12,7 +12,7 @@ export default function TakeTest() {
 
   useEffect(() => {
     portal
-      .post(`/assessments/${id}/start`)
+      .post(`/assessments/${id}/start`, {}, { retries: 4 })
       .then((res) => (res.submitted ? setResult(res.result) : setPaper(res)))
       .catch((e) => setError(e.message));
   }, [id]);
@@ -80,13 +80,14 @@ function Exam({ paper, onDone }) {
   const [submitting, setSubmitting] = useState(false);
   const [banner, setBanner] = useState("");
   const done = useRef(false);
+  const latest = useRef({}); // qid -> the answer most recently chosen, so a slow retry can't overwrite it
 
   const submit = useCallback(async () => {
     if (done.current) return;
     done.current = true;
     setSubmitting(true);
     try {
-      const { result } = await portal.post(`/attempts/${paper.attempt_id}/submit`);
+      const { result } = await portal.post(`/attempts/${paper.attempt_id}/submit`, {}, { retries: 5 });
       onDone(result);
     } catch (e) {
       done.current = false;
@@ -141,17 +142,22 @@ function Exam({ paper, onDone }) {
       else copy[qid] = next;
       return copy;
     });
+    latest.current[qid] = next;
     setSaveState((s) => ({ ...s, [qid]: "saving" }));
-    for (let attempt = 0; attempt < 2; attempt++) {
+    let sending = next;
+    for (;;) {
       try {
-        await portal.put(`/attempts/${paper.attempt_id}/answer`, { question_id: qid, option: next });
-        setSaveState((s) => ({ ...s, [qid]: undefined }));
-        return;
+        await portal.put(`/attempts/${paper.attempt_id}/answer`, { question_id: qid, option: sending }, { retries: 4 });
       } catch (e) {
         if (e.status === 409) return submit(); // time is up on the server
+        if (latest.current[qid] === next) setSaveState((s) => ({ ...s, [qid]: "error" }));
+        return;
       }
+      // Saves can finish out of order: if a newer choice was made meanwhile, make sure it is the one stored
+      if (latest.current[qid] === sending) break;
+      sending = latest.current[qid];
     }
-    setSaveState((s) => ({ ...s, [qid]: "error" }));
+    setSaveState((s) => ({ ...s, [qid]: undefined })); // the latest choice is stored
   };
 
   const q = questions[current];
