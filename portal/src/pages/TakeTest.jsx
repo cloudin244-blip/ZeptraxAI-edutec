@@ -3,19 +3,44 @@ import { Link, useParams } from "react-router-dom";
 import { portal } from "../api.js";
 import { Badge, Button, Card, ErrorText, Loading, Modal } from "../components/ui.jsx";
 import { formatClock } from "./MyTests.jsx";
+import { Precheck, useProctoring } from "./Proctoring.jsx";
+import { stopCamera } from "../proctor.js";
 
 export default function TakeTest() {
   const { id } = useParams();
+  const [test, setTest] = useState(null);
+  const [proctor, setProctor] = useState(null); // { stream, detector, fullscreen } once the camera check passes
   const [paper, setPaper] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
 
+  // The timer starts only here, after the camera and screen check
+  const begin = useCallback(
+    (ready) => {
+      setProctor(ready);
+      portal
+        .post(`/assessments/${id}/start`, {}, { retries: 4 })
+        .then((res) => (res.submitted ? setResult(res.result) : setPaper(res)))
+        .catch((e) => {
+          stopCamera(ready?.stream);
+          setError(e.message);
+        });
+    },
+    [id]
+  );
+
   useEffect(() => {
     portal
-      .post(`/assessments/${id}/start`, {}, { retries: 4 })
-      .then((res) => (res.submitted ? setResult(res.result) : setPaper(res)))
+      .get("/assessments", { retries: 3 })
+      .then(({ assessments }) => {
+        const found = assessments.find((a) => a.id === id);
+        if (!found) return setError("This test isn't available to you.");
+        if (found.attempt.status === "submitted") return setResult(found.attempt);
+        setTest(found);
+        if (!found.proctoring) begin(null);
+      })
       .catch((e) => setError(e.message));
-  }, [id]);
+  }, [id, begin]);
 
   if (error)
     return (
@@ -25,8 +50,9 @@ export default function TakeTest() {
       </Centered>
     );
   if (result) return <Result result={result} />;
-  if (!paper) return <Loading />;
-  return <Exam paper={paper} onDone={setResult} />;
+  if (paper) return <Exam paper={paper} proctor={proctor} onDone={setResult} />;
+  if (test?.proctoring && !proctor) return <Precheck test={test} resuming={test.attempt.status === "in_progress"} onReady={begin} />;
+  return <Loading />;
 }
 
 function Centered({ children }) {
@@ -43,6 +69,17 @@ function BackLink() {
 
 function Result({ result }) {
   const hasScore = result.score !== undefined && result.score !== null;
+  if (result.malpractice)
+    return (
+      <Centered>
+        <Card className="border-red-500/40 p-8 text-center">
+          <p className="text-sm font-semibold uppercase tracking-wider text-red-300">Test submitted · marked as malpractice</p>
+          <p className="mt-4 text-slate-200">{result.malpractice_reason}.</p>
+          <p className="mt-3 text-sm text-muted">Your test was submitted automatically. ZeptraAI and your university will review what was detected.</p>
+        </Card>
+        <BackLink />
+      </Centered>
+    );
   return (
     <Centered>
       <Card className="p-8 text-center">
@@ -67,7 +104,7 @@ function Result({ result }) {
   );
 }
 
-function Exam({ paper, onDone }) {
+function Exam({ paper, proctor, onDone }) {
   const questions = paper.questions;
   const total = questions.length;
   const offset = useRef(paper.server_time - Date.now() / 1000);
@@ -75,7 +112,6 @@ function Exam({ paper, onDone }) {
   const [current, setCurrent] = useState(0);
   const [remaining, setRemaining] = useState(paper.deadline - paper.server_time);
   const [saveState, setSaveState] = useState({}); // qid -> "saving" | "error"
-  const [tabSwitches, setTabSwitches] = useState(paper.tab_switches || 0);
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [banner, setBanner] = useState("");
@@ -108,29 +144,27 @@ function Exam({ paper, onDone }) {
     return () => clearInterval(timer);
   }, [paper.deadline, submit]);
 
-  // Leaving the tab is recorded
+  // Tab switches, full screen, camera: reported to the server, which decides warnings and malpractice
+  const watch = useProctoring({
+    attemptId: paper.attempt_id,
+    proctor,
+    enabled: paper.assessment.proctoring,
+    initialWarnings: paper.warnings,
+    limit: paper.assessment.warning_limit,
+    done,
+    onTerminated: onDone,
+  });
+
   useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden" && !done.current) {
-        portal
-          .post(`/attempts/${paper.attempt_id}/event`, { type: "tab_hidden" })
-          .then((r) => setTabSwitches(r.tab_switches))
-          .catch(() => {});
-      }
-    };
     const onUnload = (e) => {
       if (!done.current) {
         e.preventDefault();
         e.returnValue = "";
       }
     };
-    document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("beforeunload", onUnload);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("beforeunload", onUnload);
-    };
-  }, [paper.attempt_id]);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, []);
 
   const choose = async (qid, option) => {
     if (done.current) return;
@@ -165,7 +199,9 @@ function Exam({ paper, onDone }) {
   const urgent = remaining <= 300;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen select-none">
+      {watch.overlay}
+      {watch.cameraView}
       <header className="sticky top-0 z-20 border-b border-border bg-card/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="min-w-0">
@@ -195,9 +231,11 @@ function Exam({ paper, onDone }) {
             <ErrorText>{banner}</ErrorText>
           </div>
         )}
-        {tabSwitches > 0 && (
+        {watch.warnings > 0 && (
           <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-            You left the test tab {tabSwitches} {tabSwitches === 1 ? "time" : "times"}. This is recorded and shared with your university.
+            {watch.limit
+              ? `Warnings: ${watch.warnings} of ${watch.limit}. At ${watch.limit} your test is submitted automatically and marked as malpractice.`
+              : `You left the test ${watch.warnings} ${watch.warnings === 1 ? "time" : "times"}. This is recorded and shared with your university.`}
           </p>
         )}
         <div className="grid gap-6 lg:grid-cols-[1fr_260px]">

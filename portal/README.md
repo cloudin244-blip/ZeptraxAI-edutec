@@ -22,6 +22,23 @@ How many students can join is the university's **student limit** (Universities p
 no limit. A link can also fix the branch and batch, choose the test students are sent to (default: their
 required test), expire, and be turned off. Backend: `api/_signup_links.py`.
 
+## Proctoring (per test, on by default)
+
+Before the timer starts, students pass a camera and screen check (camera on, detection model loaded,
+no second monitor), then the test runs in full screen with the camera on.
+
+- **Warnings** (limit set per test, default 3; at the limit the test is auto-submitted as malpractice):
+  leaving the tab or window, leaving full screen, nobody on camera for ~10 s, camera turned off.
+- **Immediate malpractice**: a mobile phone (~3 s) or a second person (~4.5 s) on camera, detected in
+  the browser with TensorFlow.js COCO-SSD. A snapshot is stored as evidence (`ProctorEvidence`).
+- Copy, paste, right-click and common shortcuts are blocked.
+- The browser only reports events; `api/_proctoring.py` decides warnings and malpractice. Results show
+  the flag, reason, event timeline and snapshots; staff can clear a wrong flag (the score then counts).
+- Limits of a web page: it can't stop a student opening other apps, only detect and penalise leaving;
+  the camera can't see a phone held out of view. A locked-down setup needs Safe Exam Browser or similar.
+- The detection model (~5 MB) is fetched from Google's CDN (`storage.googleapis.com`) on the exam
+  screen. If it can't load, the student can still start and "detection unavailable" is recorded.
+
 ## Running under heavy load
 
 What the backend does so a whole university can sign up and take a test at once:

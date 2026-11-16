@@ -13,7 +13,8 @@ import uuid
 
 import _db_router as core
 
-GRACE_SECONDS = 15  # network slack after the deadline for the last answer / submit
+GRACE_SECONDS = 15
+DEFAULT_WARNING_LIMIT = 3  # proctoring warnings before an attempt is submitted as malpractice  # network slack after the deadline for the last answer / submit
 _rng = random.SystemRandom()
 
 
@@ -67,8 +68,9 @@ def total_marks(db, assessment):
     return question_count(db, assessment["id"]) * assessment.get("marks_per_question", 1)
 
 
-def finalize(db, attempt, now=None):
-    """Score an attempt server-side and mark it submitted (idempotent)"""
+def finalize(db, attempt, now=None, malpractice=None):
+    """Score an attempt server-side and mark it submitted (idempotent). `malpractice` is the reason the
+    proctoring ended the attempt early; the score is still computed so staff can review it."""
     if attempt.get("status") == "submitted":
         return attempt
     assessment = db["Assessment"].find_one({"id": attempt["assessment_id"]})
@@ -95,6 +97,8 @@ def finalize(db, attempt, now=None):
         "score": max(0, correct * per_q - wrong * negative),
         "total_marks": total_marks(db, assessment),
     }
+    if malpractice:
+        result.update({"auto_submitted": True, "malpractice": True, "malpractice_reason": malpractice})
     # Only the first finalize wins if two requests race
     db["AssessmentAttempt"].update_one({"id": attempt["id"], "status": "in_progress"}, {"$set": result})
     return db["AssessmentAttempt"].find_one({"id": attempt["id"]})
@@ -108,6 +112,9 @@ def expire_if_overdue(db, attempt):
 
 def result_view(assessment, attempt):
     view = {"status": attempt["status"], "submitted_at": attempt.get("submitted_at"), "auto_submitted": attempt.get("auto_submitted", False)}
+    if attempt.get("malpractice"):
+        view.update({"malpractice": True, "malpractice_reason": attempt.get("malpractice_reason", "")})
+        return view
     if assessment.get("show_score_to_students", True):
         view.update({k: attempt.get(k) for k in ("score", "total_marks", "correct", "answered")})
     return view
@@ -122,6 +129,8 @@ def summary(db, assessment, with_attempts=True):
         "total_marks": total_marks(db, assessment), "status": assessment.get("status"),
         "audience": assessment.get("audience", "all_students"), "university_ids": assessment.get("university_ids") or [],
         "show_score_to_students": assessment.get("show_score_to_students", True),
+        "proctoring": assessment.get("proctoring", True),
+        "warning_limit": int(assessment.get("warning_limit") or DEFAULT_WARNING_LIMIT),
     }
     if with_attempts:
         out["attempts"] = db["AssessmentAttempt"].count_documents({"assessment_id": assessment["id"]})
@@ -167,6 +176,7 @@ def paper(db, assessment, attempt):
     return ok({
         "attempt_id": attempt["id"], "assessment": summary(db, assessment, with_attempts=False), "deadline": attempt["deadline"],
         "server_time": time.time(), "questions": out, "answers": shown, "tab_switches": attempt.get("tab_switches", 0),
+        "warnings": attempt.get("warnings", 0),
     })
 
 
@@ -249,15 +259,6 @@ def submit(db, user, attempt_id):
     return ok({"result": result_view(assessment, attempt)})
 
 
-def record_event(db, user, attempt_id, body):
-    attempt, problem = own_attempt(db, user, attempt_id)
-    if problem:
-        return problem
-    if attempt["status"] == "in_progress":
-        db["AssessmentAttempt"].update_one({"id": attempt_id}, {"$inc": {"tab_switches": 1}, "$push": {"events": {"$each": [{"type": "tab_hidden", "at": time.time()}], "$slice": -200}}})
-    return ok({"tab_switches": attempt.get("tab_switches", 0) + 1})
-
-
 # ---------------------------------------------------------------- staff and university admins
 
 def list_for_managers(db, user):
@@ -312,6 +313,9 @@ def results(db, user, assessment_id, query_params):
             "score": a.get("score") if a else None, "correct": a.get("correct") if a else None, "answered": a.get("answered") if a else None,
             "started_at": a.get("started_at") if a else None, "submitted_at": a.get("submitted_at") if a else None,
             "auto_submitted": a.get("auto_submitted", False) if a else False, "tab_switches": a.get("tab_switches", 0) if a else 0,
+            "attempt_id": a["id"] if a else None, "warnings": a.get("warnings", 0) if a else 0,
+            "malpractice": bool(a and a.get("malpractice")), "malpractice_reason": a.get("malpractice_reason", "") if a else "",
+            "malpractice_cleared": bool(a and a.get("malpractice_cleared")),
         })
     rows.sort(key=lambda r: (r["status"] != "submitted", -(r["score"] or 0), r["full_name"].lower()))
     return ok({"assessment": summary(db, assessment), "results": rows})
@@ -371,7 +375,12 @@ def test_settings(db, data, creating):
             out["negative_marks"] = number(data.get("negative_marks", 0), 0, 100, "Negative marks", True)
     except ValueError as e:
         return None, str(e)
-    for flag in ("required", "show_score_to_students"):
+    if "warning_limit" in data or creating:
+        try:
+            out["warning_limit"] = number(data.get("warning_limit", DEFAULT_WARNING_LIMIT), 1, 20, "Warnings before auto-submit")
+        except ValueError as e:
+            return None, str(e)
+    for flag in ("required", "show_score_to_students", "proctoring"):
         if flag in data:
             out[flag] = bool(data[flag])
     if "audience" in data:
@@ -396,7 +405,7 @@ def create_test(db, user, body):
     values, problem = test_settings(db, data, creating=True)
     if problem:
         return error(400, problem)
-    doc = {"id": str(uuid.uuid4()), "status": "draft", "required": False, "audience": "all_students", "university_ids": [],
+    doc = {"id": str(uuid.uuid4()), "status": "draft", "required": False, "audience": "all_students", "university_ids": [], "proctoring": True,
            "show_score_to_students": True, "description": "", "created_by": user.get("email"), "created_at": time.time(), **values}
     doc["status"] = "draft"  # new tests start as drafts until they have questions
     db["Assessment"].insert_one(doc)
@@ -565,13 +574,15 @@ def handle(db, method, path, query_params, body_data, user):
             return answer_key(db, user, assessment_id)
         return error(403, "Not allowed")
 
-    match = re.fullmatch(r"/attempts/([\w-]+)/(answer|submit|event)", path)
+    import _proctoring
+    routed = _proctoring.handle(db, method, path, body_data, user)
+    if routed is not None:
+        return routed
+    match = re.fullmatch(r"/attempts/([\w-]+)/(answer|submit)", path)
     if match:
         attempt_id, action = match.groups()
         if action == "answer" and method == "PUT":
             return save_answer(db, user, attempt_id, body_data)
         if action == "submit" and method == "POST":
             return submit(db, user, attempt_id)
-        if action == "event" and method == "POST":
-            return record_event(db, user, attempt_id, body_data)
     return None  # not an assessment route

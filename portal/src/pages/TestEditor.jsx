@@ -172,6 +172,7 @@ function Settings({ test, universities, locked, onSaved }) {
     const body = {
       title: form.title, description: form.description, duration_minutes: form.duration_minutes, required: form.required,
       show_score_to_students: form.show_score_to_students, audience: form.audience, university_ids: form.university_ids,
+      proctoring: form.proctoring, warning_limit: form.warning_limit,
       ...(locked ? {} : { marks_per_question: form.marks_per_question, negative_marks: form.negative_marks }),
     };
     try {
@@ -212,6 +213,22 @@ function Settings({ test, universities, locked, onSaved }) {
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={form.show_score_to_students} onChange={(e) => set("show_score_to_students", e.target.checked)} /> Show students their score
           </label>
+        </div>
+        <div className="rounded-lg border border-border p-4">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={form.proctoring} onChange={(e) => set("proctoring", e.target.checked)} /> Camera proctoring
+          </label>
+          <p className="mt-1 text-xs text-muted">
+            Students need a camera and full screen. A phone or another person on camera submits the test at once as malpractice; leaving the tab, full screen or
+            the camera's view counts as a warning.
+          </p>
+          {form.proctoring && (
+            <div className="mt-3 max-w-xs">
+              <Field label="Auto-submit as malpractice after this many warnings">
+                <input className="input" type="number" min={1} max={20} required value={form.warning_limit} onChange={(e) => set("warning_limit", e.target.value)} />
+              </Field>
+            </div>
+          )}
         </div>
         <Field label="Who takes this test">
           <select className="input max-w-xs" value={form.audience} onChange={(e) => set("audience", e.target.value)}>

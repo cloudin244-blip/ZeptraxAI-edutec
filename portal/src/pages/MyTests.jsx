@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { portal } from "../api.js";
 import { Badge, Button, Card, ErrorText, Loading, Modal, PageHeader, useLoad } from "../components/ui.jsx";
+import { ProctoringRules } from "./Proctoring.jsx";
 
 export function formatClock(seconds) {
   const s = Math.max(0, Math.floor(seconds));
@@ -62,7 +63,8 @@ export function TestCard({ test, clockOffset = 0, onStart, onResume }) {
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-semibold">{test.title}</h2>
             {test.required && <Badge tone="amber">Required</Badge>}
-            {a.status === "submitted" && <Badge tone="green">Submitted</Badge>}
+            {a.status === "submitted" && (a.malpractice ? <Badge tone="red">Malpractice</Badge> : <Badge tone="green">Submitted</Badge>)}
+            {test.proctoring && a.status !== "submitted" && <Badge tone="blue">Camera proctored</Badge>}
             {a.status === "in_progress" && <Badge tone="blue">In progress</Badge>}
           </div>
           <div className="mt-1">
@@ -79,7 +81,9 @@ export function TestCard({ test, clockOffset = 0, onStart, onResume }) {
             </>
           )}
           {a.status === "submitted" &&
-            (a.score !== undefined && a.score !== null ? (
+            (a.malpractice ? (
+              <p className="max-w-xs text-sm text-red-300">Submitted automatically and marked as malpractice: {a.malpractice_reason}.</p>
+            ) : a.score !== undefined && a.score !== null ? (
               <div>
                 <p className="text-2xl font-bold">
                   {a.score}
@@ -107,8 +111,15 @@ export function StartModal({ test, onClose, onStart }) {
           <li>You get one attempt. The {test.duration_minutes}-minute timer starts as soon as you begin and keeps running even if you close the page.</li>
           <li>Your answers save automatically. You can change them and move between questions until you submit.</li>
           <li>When time runs out, the test is submitted automatically.</li>
-          <li>Stay on the test page: leaving the tab is recorded.</li>
+          {!test.proctoring && <li>Stay on the test page: leaving the tab is recorded.</li>}
         </ul>
+        {test.proctoring && (
+          <>
+            <p className="font-medium">This test is camera proctored</p>
+            <ProctoringRules test={test} />
+            <p className="text-muted">Next you'll check your camera and screen. The timer starts only after that.</p>
+          </>
+        )}
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>
             Not yet
