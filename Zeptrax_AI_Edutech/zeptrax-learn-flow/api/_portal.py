@@ -563,6 +563,10 @@ def handle(db, method, path, query_params, body_data, user, headers=None):
     if routed is not None:
         return routed
 
+    if path == "/project-sets" or path.startswith("/project-sets/"):
+        import _project_sets
+        return _project_sets.handle(db, method, path, body_data, user)
+
     if path == "/projects" or path.startswith(("/projects/", "/submissions/")):
         import _projects
         routed = _projects.handle(db, method, path, body_data, user)

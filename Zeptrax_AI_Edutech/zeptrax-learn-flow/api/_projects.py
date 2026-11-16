@@ -53,7 +53,8 @@ def is_staff(user):
 
 
 def assigned_to(project, user):
-    if project.get("status") != "published" or user.get("role") != STUDENT:
+    """Single projects only; projects inside a selection are reached through _project_sets"""
+    if project.get("set_id") or project.get("status") != "published" or user.get("role") != STUDENT:
         return False
     audience, targets = project.get("audience", "all_students"), project.get("targets") or []
     if audience == "programs":
@@ -90,9 +91,33 @@ def lookup_names(db):
     ))
 
 
-def visible_to_university(project, university_id):
+def visible_to_university(project, university_id, db=None):
     """A university admin sees projects for all students, for programs, or aimed at their own university"""
+    if project.get("set_id") and db is not None:
+        import _project_sets
+        s = _project_sets.get_set(db, project["set_id"])
+        return bool(s) and s.get("status") == "published" and _project_sets.visible_to_university(s, university_id)
     return project.get("audience") != "universities" or university_id in (project.get("targets") or [])
+
+
+def chosen_project(db, user, project):
+    """For a project inside a selection: (selection, set) if this student chose it, else (None, set)"""
+    import _project_sets
+    s = _project_sets.get_set(db, project.get("set_id"))
+    if not _project_sets.assigned(s, user):
+        return None, None
+    chosen = _project_sets.selection(db, s["id"], user["id"])
+    return (chosen if chosen and chosen["project_id"] == project["id"] else None), s
+
+
+def with_choice(view, chosen, project_set):
+    """Deadline and set details for a project the student chose from a selection"""
+    import _project_sets
+    view["set_id"], view["set_title"] = project_set["id"], project_set["title"]
+    view["due_date"] = chosen.get("deadline")
+    view["chosen_at"] = chosen["chosen_at"]
+    view["overdue"] = _project_sets.past_deadline(chosen)
+    return view
 
 
 def project_view(db, project, viewer=None):
@@ -108,6 +133,7 @@ def project_view(db, project, viewer=None):
         "audience": project.get("audience", "all_students"), "targets": targets,
         "target_names": [names.get(t, t) for t in targets],
         "status": project.get("status", "draft"), "created_at": project.get("created_at"),
+        "difficulty": project.get("difficulty", ""), "set_id": project.get("set_id"),
     }
 
 
@@ -139,12 +165,23 @@ def list_projects(db, user):
             view["submission"] = submission_view(subs.get(p["id"]))
             view["overdue"] = overdue(p)
             items.append(view)
-        return ok({"projects": items})
+        import _project_sets
+        sets = _project_sets.for_student(db, user)
+        for s in sets:
+            if s.get("chosen"):
+                p = db["PortalProject"].find_one({"id": s["chosen"]["project_id"]})
+                if p:
+                    chosen = _project_sets.selection(db, s["id"], user["id"])
+                    view = with_choice(project_view(db, p), chosen, s)
+                    view["submission"] = submission_view(db["ProjectSubmission"].find_one({"project_id": p["id"], "user_id": user["id"]}))
+                    items.insert(0, view)
+        return ok({"projects": items, "sets": [s for s in sets if not s.get("chosen")]})
     if not (is_staff(user) or user.get("role") == UNIVERSITY_ADMIN):
         return ok({"projects": []})
     university_id = None if is_staff(user) else user.get("university_id")
     items = []
-    for p in db["PortalProject"].find({} if is_staff(user) else {"status": "published"}).sort("created_at", -1):
+    single = {"set_id": None}  # projects inside selections are listed under their selection
+    for p in db["PortalProject"].find(single if is_staff(user) else {**single, "status": "published"}).sort("created_at", -1):
         if university_id and not visible_to_university(p, university_id):
             continue
         view = project_view(db, p, user)
@@ -163,6 +200,13 @@ def get_project(db, user, project_id):
     if not project:
         return error(404, "Project not found")
     if user.get("role") == STUDENT:
+        if project.get("set_id"):
+            chosen, project_set = chosen_project(db, user, project)
+            if not chosen:
+                return error(404, "Project not found")
+            view = with_choice(project_view(db, project), chosen, project_set)
+            view["submission"] = submission_view(db["ProjectSubmission"].find_one({"project_id": project_id, "user_id": user["id"]}))
+            return ok({"project": view})
         if not assigned_to(project, user):
             return error(404, "Project not found")
         view = project_view(db, project)
@@ -171,7 +215,7 @@ def get_project(db, user, project_id):
         return ok({"project": view})
     if is_staff(user):
         return ok({"project": project_view(db, project)})
-    if user.get("role") == UNIVERSITY_ADMIN and project.get("status") == "published" and visible_to_university(project, user.get("university_id")):
+    if user.get("role") == UNIVERSITY_ADMIN and project.get("status") == "published" and visible_to_university(project, user.get("university_id"), db):
         return ok({"project": project_view(db, project, user)})
     return error(403, "Not allowed")
 
@@ -182,14 +226,19 @@ def list_submissions(db, user, project_id):
         return error(404, "Project not found")
     if is_staff(user):
         university_id = None
-    elif user.get("role") == UNIVERSITY_ADMIN and project.get("status") == "published" and visible_to_university(project, user.get("university_id")):
+    elif user.get("role") == UNIVERSITY_ADMIN and project.get("status") == "published" and visible_to_university(project, user.get("university_id"), db):
         university_id = user.get("university_id")
     else:
         return error(403, "Not allowed")
     titles, unis = lookup_names(db)
     subs = {s["user_id"]: s for s in db["ProjectSubmission"].find({"project_id": project_id})}
     rows = []
-    for st in db["User"].find(student_filter(project, university_id)):
+    if project.get("set_id"):  # the students who chose this project
+        chooser_ids = [c["user_id"] for c in db["ProjectSelection"].find({"project_id": project_id}, {"user_id": 1})]
+        students = {"role": STUDENT, "id": {"$in": chooser_ids}, **({"university_id": university_id} if university_id else {})}
+    else:
+        students = student_filter(project, university_id)
+    for st in db["User"].find(students):
         sub = subs.get(st["id"])
         rows.append({
             "student": {"id": st["id"], "full_name": st.get("full_name") or st.get("name") or "", "email": st.get("email", ""),
@@ -207,13 +256,21 @@ def submit(db, user, project_id, body):
     if user.get("role") != STUDENT:
         return error(403, "Only students submit projects")
     project = db["PortalProject"].find_one({"id": project_id})
-    if not project or not assigned_to(project, user):
-        return error(404, "Project not found")
+    if project and project.get("set_id"):
+        import _project_sets
+        chosen, _ = chosen_project(db, user, project)
+        if not chosen:
+            return error(404, "Project not found")
+        late = _project_sets.past_deadline(chosen)
+    else:
+        if not project or not assigned_to(project, user):
+            return error(404, "Project not found")
+        late = overdue(project)
     existing = db["ProjectSubmission"].find_one({"project_id": project_id, "user_id": user["id"]})
     if existing and existing.get("status") == "evaluated":
         return error(409, "Your project has been marked, so it can't be changed.")
-    if overdue(project):
-        return error(409, "The due date has passed, so submissions are closed.")
+    if late:
+        return error(409, "Your time for this project is over, so submissions are closed.")
     data = body_dict(body)
     if data is None:
         return error(400, "Invalid data")
@@ -253,6 +310,10 @@ def project_values(db, data, creating):
     for field, limit in (("category", 80), ("description", 4000), ("requirements", 4000)):
         if field in data:
             out[field] = clean(data.get(field), limit)
+    if "difficulty" in data:
+        if data.get("difficulty") not in ("", None, "Easy", "Medium", "Hard"):
+            return None, "Difficulty must be Easy, Medium or Hard"
+        out["difficulty"] = data.get("difficulty") or ""
     if "due_date" in data:
         due = data.get("due_date")
         if due in (None, ""):
@@ -311,6 +372,10 @@ def create_project(db, user, body):
         return error(400, problem)
     doc = {"id": str(uuid.uuid4()), "status": "draft", "category": "", "description": "", "requirements": "", "due_date": None,
            "created_by": user.get("email"), "created_at": time.time(), **values}
+    if data.get("set_id"):
+        if not db["ProjectSet"].find_one({"id": data["set_id"]}, {"_id": 1}):
+            return error(400, "Project selection not found")
+        doc.update({"set_id": data["set_id"], "order": db["PortalProject"].count_documents({"set_id": data["set_id"]}) + 1})
     db["PortalProject"].insert_one(doc)
     return ok({"project": project_view(db, doc)}, 201)
 
@@ -332,6 +397,8 @@ def update_project(db, user, project_id, body):
 
 
 def delete_project(db, project_id):
+    if db["ProjectSelection"].count_documents({"project_id": project_id}):
+        return error(409, "Students have chosen this project, so it can't be deleted. Unpublish it instead.")
     if db["ProjectSubmission"].count_documents({"project_id": project_id}):
         return error(409, "Students have submitted work for this project, so it can't be deleted. Unpublish it instead.")
     if not db["PortalProject"].delete_one({"id": project_id}).deleted_count:

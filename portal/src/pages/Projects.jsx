@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { portal } from "../api.js";
 import { useAuth } from "../auth.jsx";
 import { Badge, Button, Card, ErrorText, Field, formatDate, Loading, Modal, Notice, PageHeader, Table, useLoad } from "../components/ui.jsx";
 import { usePrograms } from "../components/ProgramSelect.jsx";
 import { downloadCsv } from "./Invitations.jsx";
+import { Difficulty, ProjectSetsSection } from "./ProjectSets.jsx";
 
 const AUDIENCE = { all_students: "All students", programs: "Programs", universities: "Universities" };
 
 export function audienceText(p) {
+  if (p.set_id) return "Option in a project selection";
   return p.audience === "all_students" ? "All students" : `${AUDIENCE[p.audience]}: ${p.target_names.join(", ")}`;
 }
 
@@ -61,8 +63,11 @@ export default function Projects() {
           )
         }
       />
+      <ProjectSetsSection />
+      <h2 className="mb-1 text-lg font-semibold">Single projects</h2>
+      <p className="mb-3 text-sm text-muted">Every assigned student does the same project.</p>
       <ErrorText>{error}</ErrorText>
-      <Card>{data ? <Table columns={columns} rows={data.projects} empty="No projects yet." /> : !error && <Loading />}</Card>
+      <Card>{data ? <Table columns={columns} rows={data.projects} empty="No single projects yet." /> : !error && <Loading />}</Card>
     </>
   );
 }
@@ -72,6 +77,7 @@ export default function Projects() {
 export function ProjectForm() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const isNew = !id;
   const programs = usePrograms();
   const [universities] = useLoad(() => portal.get("/universities"), []);
@@ -81,14 +87,15 @@ export function ProjectForm() {
 
   useEffect(() => {
     if (isNew) {
-      setForm({ title: "", category: "", description: "", requirements: "", due: "", audience: "all_students", targets: [], rubric: null, status: "draft" });
+      setForm({ title: "", category: "", description: "", requirements: "", due: "", audience: "all_students", targets: [], rubric: null, status: "draft",
+        difficulty: "", set_id: params.get("set") || null });
     } else {
       portal
         .get(`/projects/${id}`)
         .then(({ project: p }) => setForm({ ...p, due: toDateInput(p.due_date) }))
         .catch((e) => setError(e.message));
     }
-  }, [id, isNew]);
+  }, [id, isNew, params]);
 
   if (!form) return error ? <ErrorText>{error}</ErrorText> : <Loading />;
   const rubric = form.rubric || DEFAULT_RUBRIC;
@@ -96,18 +103,21 @@ export function ProjectForm() {
   const setRubric = (i, k, v) => set("rubric", rubric.map((r, j) => (j === i ? { ...r, [k]: k === "max_marks" ? v.replace(/\D/g, "") : v } : r)));
   const toggle = (t) => set("targets", form.targets.includes(t) ? form.targets.filter((x) => x !== t) : [...form.targets, t]);
   const total = rubric.reduce((s, r) => s + (Number(r.max_marks) || 0), 0);
+  const inSet = !!form.set_id;
+  const back = inSet ? `/projects/sets/${form.set_id}` : isNew ? "/projects" : `/projects/${id}`;
 
   const save = async (status) => {
     setBusy(true);
     setError("");
     const body = {
       title: form.title, category: form.category, description: form.description, requirements: form.requirements,
-      due_date: fromDateInput(form.due), audience: form.audience, targets: form.targets,
-      rubric: rubric.map((r) => ({ criterion: r.criterion, max_marks: Number(r.max_marks) })), status,
+      due_date: inSet ? null : fromDateInput(form.due), audience: inSet ? "all_students" : form.audience, targets: inSet ? [] : form.targets,
+      rubric: rubric.map((r) => ({ criterion: r.criterion, max_marks: Number(r.max_marks) })), status, difficulty: form.difficulty || "",
+      ...(isNew && inSet ? { set_id: form.set_id } : {}),
     };
     try {
       const { project } = isNew ? await portal.post("/projects", body) : await portal.put(`/projects/${id}`, body);
-      navigate(`/projects/${project.id}`);
+      navigate(inSet ? `/projects/sets/${form.set_id}` : `/projects/${project.id}`);
     } catch (e) {
       setError(e.message);
       setBusy(false);
@@ -116,7 +126,7 @@ export function ProjectForm() {
 
   return (
     <>
-      <PageHeader title={isNew ? "New project" : `Edit ${form.title}`} />
+      <PageHeader title={isNew ? (inSet ? "Add a project to the selection" : "New project") : `Edit ${form.title}`} />
       <Card className="max-w-3xl space-y-5 p-6">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Title">
@@ -132,7 +142,17 @@ export function ProjectForm() {
         <Field label="What to submit / requirements">
           <textarea className="input" rows={4} maxLength={4000} value={form.requirements} onChange={(e) => set("requirements", e.target.value)} placeholder="GitHub repository, architecture diagram, demo video…" />
         </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
+        {inSet && (
+          <Field label="Difficulty">
+            <select className="input max-w-xs" value={form.difficulty || ""} onChange={(e) => set("difficulty", e.target.value)}>
+              <option value="">Not set</option>
+              <option>Easy</option>
+              <option>Medium</option>
+              <option>Hard</option>
+            </select>
+          </Field>
+        )}
+        <div className={`grid gap-4 sm:grid-cols-2 ${inSet ? "hidden" : ""}`}>
           <Field label="Due date" hint="Submissions close at the end of this day. Leave empty for no deadline.">
             <input className="input" type="date" value={form.due} onChange={(e) => set("due", e.target.value)} />
           </Field>
@@ -144,7 +164,7 @@ export function ProjectForm() {
             </select>
           </Field>
         </div>
-        {form.audience === "programs" && (
+        {!inSet && form.audience === "programs" && (
           <div className="grid max-h-60 gap-2 overflow-y-auto rounded-lg border border-border p-3 sm:grid-cols-2">
             {(programs || []).map((p) => (
               <label key={p.slug} className="flex items-center gap-2 text-sm">
@@ -153,7 +173,7 @@ export function ProjectForm() {
             ))}
           </div>
         )}
-        {form.audience === "universities" && (
+        {!inSet && form.audience === "universities" && (
           <div className="grid gap-2 rounded-lg border border-border p-3 sm:grid-cols-3">
             {(universities?.universities || []).map((u) => (
               <label key={u.id} className="flex items-center gap-2 text-sm">
@@ -185,14 +205,14 @@ export function ProjectForm() {
         </div>
         <ErrorText>{error}</ErrorText>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="secondary" onClick={() => navigate(isNew ? "/projects" : `/projects/${id}`)}>
+          <Button variant="secondary" onClick={() => navigate(back)}>
             Cancel
           </Button>
           <Button variant="secondary" loading={busy} onClick={() => save("draft")}>
-            {form.status === "published" ? "Unpublish and save" : "Save as draft"}
+            {inSet ? (form.status === "published" ? "Hide from students and save" : "Save hidden") : form.status === "published" ? "Unpublish and save" : "Save as draft"}
           </Button>
           <Button loading={busy} onClick={() => save("published")}>
-            {form.status === "published" ? "Save" : "Save and publish"}
+            {inSet ? (form.status === "published" ? "Save" : "Save and list for students") : form.status === "published" ? "Save" : "Save and publish"}
           </Button>
         </div>
       </Card>
